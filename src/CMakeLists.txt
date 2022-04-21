@@ -15,3 +15,6 @@ set(CMAKE_CUDA_STANDARD 20 CACHE STRING "CUDA C++ standard")
 set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
 
 add_executable(test ${SRCS})
+
+target_compile_options(test PRIVATE -Wall;-Wextra)
+

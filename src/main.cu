@@ -9,6 +9,7 @@
 #include <functional>
 #include <float.h>
 
+#include "scan_config.cuh"
 #include "sum_search.cuh"
 #include "scan.cuh"
 
@@ -18,10 +19,10 @@ typedef chrono::high_resolution_clock clck;
 // This will be slower than using curand, but we want to check accuracy/speed
 // against the naiive linear CPU implementation.
 template<typename T>
-vector<T> get_random_array(long N, T (*rand_T)()) {
+vector<T> get_random_array(size_t N, T (*rand_T)()) {
   vector<T> vec{};
   vec.reserve(N);
-  for (long i = 0; i < N; ++i) vec.emplace_back(rand_T());
+  for (size_t i = 0; i < N; ++i) vec.emplace_back(rand_T());
   return vec;
 }
 
@@ -35,10 +36,11 @@ enum ArrayType {
 struct Parameters {
   long seed = 123456789;
   long num_tests = 100;
-  long numel = 10000;
+  size_t numel = 10000;
   long double max = INT_MAX;
   int device = 0;
   ArrayType vtype = I32;
+  bool check_correctness = false;
 };
 
 // Parse command line arguments
@@ -75,40 +77,81 @@ Parameters parse_args(int argc, char** argv) {
         params.max = DBL_MAX;
       } else throw runtime_error("Unknown data type");
       ++iarg;
+    } else if (strcmp(argv[iarg], "-c")==0 || strcmp(argv[iarg], "--check")==0) {
+      params.check_correctness = true;
+      ++iarg;
     } else throw runtime_error("Unknown argument '" + string(argv[iarg]) + "'");
   }
+  if (params.vtype == ArrayType::I32 && params.numel > INT_MAX) throw runtime_error("Number of elements too large to fit in int");
   if (params.vtype == ArrayType::I32 || params.vtype == ArrayType::I64)
     params.max /= params.numel;
+  params.max = 100;
   return params;
 }
 
+enum ScanType {
+  SCAN,
+  SUM_SEARCH,
+};
 
-template<typename DIST>
-void test_partial_scan(const Parameters &params, DIST &dist, mt19937 &engine) {
+template<ScanType scan_type, typename DIST>
+void test_partial_scan(
+    const Parameters &params,
+    DIST &dist,
+    mt19937 &engine
+) {
   typedef typename DIST::result_type T;
-  vector<T> vec(params.numel);
-  T* vec_in_d; cudaMalloc((void**)&vec_in_d, sizeof(T)*params.numel);
-  T* vec_out_d; cudaMalloc((void**)&vec_in_d, sizeof(T)*params.numel);
 
-  static const int block_size = 512;
+  uniform_real_distribution<double> rng_select{};
+
+  vector<T> vec(params.numel); // gives 0.0 <= r < 1.0
+  T* vec_in_d = nullptr;  CUDA_CHECK(cudaMalloc((void**)&vec_in_d,  sizeof(T)*params.numel));
+  T* vec_out_d = nullptr; CUDA_CHECK(cudaMalloc((void**)&vec_out_d, sizeof(T)*params.numel));
+  size_t result{};
+  size_t* result_d = nullptr; CUDA_CHECK(cudaMalloc((void**)&result_d, sizeof(size_t)));
 
   clck::duration time_tot{0};
   clck::time_point time_start;
   for (long i = 0; i < params.num_tests; ++i) {
-    for (long n = 0; n < params.numel; ++n) vec[n] = dist(engine);
-    cudaMemcpy(vec_in_d, vec.data(), sizeof(T)*params.numel, cudaMemcpyHostToDevice);
+    for (size_t n = 0; n < params.numel; ++n) vec[n] = 1; //dist(engine);
+    CUDA_CHECK(cudaMemcpy(vec_in_d, vec.data(), sizeof(T)*params.numel, cudaMemcpyHostToDevice));
+    double r = rng_select(engine);
+
     time_start = clck::now();
 
-    scan_up_sweep<<<(params.numel+block_size-1)/block_size, block_size, sizeof(T)*block_size*2>>>(vec_in_d, vec_out_d);
+    if (scan_type == SCAN) {
+      scan_search(r, vec_in_d, vec_out_d, params.numel, result_d);
+    }else if (scan_type == SUM_SEARCH) {
+      sum_search(r, vec_in_d, vec_out_d, params.numel, result_d);
+    } else {
+      fprintf(stderr, "ERROR: unknown algorithm type. This should not occur.");
+      exit(-1);
+    }
+    cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
 
     auto time_end = clck::now();
+
+    if (params.check_correctness) {
+      for (size_t j = 1; j < params.numel; j++) vec[j] += vec[j-1];
+      T rng = r*vec[params.numel-1];
+      size_t j = 0;
+      while (j < params.numel && rng > vec[j]) ++j;
+      if (j != result) printf("Different results! Expected %ld, got %ld\n", j, result);
+    }
+
     time_tot += time_end - time_start;
   }
-  printf("Partial scan, search on GPU\t%10g ns\n", static_cast<double>(time_tot.count()) / params.num_tests);
+  auto table_str = "";
+  if (scan_type == SCAN) table_str = "Full scan + search";
+  else if (scan_type == SUM_SEARCH) table_str = "Partial scan + search";
+
+  printf("%s on GPU\t%10g ns\n", 
+      table_str, static_cast<double>(time_tot.count()) / params.num_tests);
 }
 
+template<ScanType scan_type>
 void measure_partial_scan(const Parameters &params) {
-  cudaSetDevice(params.device);
+  CUDA_CHECK(cudaSetDevice(params.device));
 
   mt19937 engine{};
   engine.seed(params.seed);
@@ -117,25 +160,25 @@ void measure_partial_scan(const Parameters &params) {
     case ArrayType::I32:
       {
         uniform_int_distribution<int> dist{0, static_cast<int>(params.max)};
-        test_partial_scan(params, dist, engine);
+        test_partial_scan<scan_type>(params, dist, engine);
         break;
       }
     case ArrayType::I64:
       {
         uniform_int_distribution<long> dist{0, static_cast<long>(params.max)};
-        test_partial_scan(params, dist, engine);
+        test_partial_scan<scan_type>(params, dist, engine);
         break;
       }
     case ArrayType::F32:
       {
         uniform_real_distribution<float> dist{0, static_cast<float>(params.max)};
-        test_partial_scan(params, dist, engine);
+        test_partial_scan<scan_type>(params, dist, engine);
         break;
       }
     case ArrayType::F64:
       {
         uniform_real_distribution<double> dist{0, static_cast<double>(params.max)};
-        test_partial_scan(params, dist, engine);
+        test_partial_scan<scan_type>(params, dist, engine);
         break;
       }
   }
@@ -146,13 +189,15 @@ int main(int argc, char** argv) {
   Parameters params;
   try {
     params = parse_args(argc, argv);
-  } catch (runtime_error e) {
+  } catch (runtime_error &e) {
     printf("Error parsing command line flags:\n%s\n", e.what());
     return 1;
   }
 
-  measure_partial_scan(params);
+  // measure_partial_scan<ScanType::SCAN>(params);
+  measure_partial_scan<ScanType::SUM_SEARCH>(params);
 
 
   return 0;
 }
+
