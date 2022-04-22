@@ -92,7 +92,7 @@ __global__ void search_tree_device(
   const size_t begin,    // The final stride from scanning (>= N), divided by 2 until it's < N
   size_t* found          // output -> index of chosen element
 ) {
-  T rng = r * tree[N-1];
+  const T rng = r * tree[N-1];
 
   size_t offset = 0;
   T val_offset = 0;
