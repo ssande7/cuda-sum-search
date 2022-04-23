@@ -1,13 +1,12 @@
 
 set(SRCS
   main.cu
-  scan.cu
-  sum_search.cu
   )
 
 set(INC
   scan.cuh
   sum_search.cuh
+  scan_config.cuh
   )
 
 set(CMAKE_CUDA_RUNTIME_LIBRARY Static CACHE STRING "CUDA runtime library")
