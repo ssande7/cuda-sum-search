@@ -115,7 +115,7 @@ void test_partial_scan(
   for (long i = 0; i < params.num_tests; ++i) {
     for (size_t n = 0; n < params.numel; ++n) vec[n] = dist(engine);
     CUDA_CHECK(cudaMemcpy(vec_in_d, vec.data(), sizeof(T)*params.numel, cudaMemcpyHostToDevice));
-    double r = rng_select(engine);
+    double r = 1.0 - rng_select(engine); // Need 0 < r <= 1
 
     time_start = clck::now();
 
