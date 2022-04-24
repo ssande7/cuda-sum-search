@@ -70,19 +70,6 @@ __global__ void scan_up_sweep(
 }
 
 
-// Compare function to allow specialisation for floating point numbers
-template<typename T> __device__ __host__
-inline bool search_cmp(T r, T val) {
-  return r > val;
-}
-template<> __device__ __host__ 
-inline bool search_cmp<float>(float r, float val) {
-  return r > val && (r - val)/r > 100*__FLT_EPSILON__;
-}
-template<> __device__ __host__ 
-inline bool search_cmp<double>(double r, double val) {
-  return r > val && (r - val)/r > 100*__DBL_EPSILON__;
-}
 // Use 1 block, 1 thread, n_steps * sizeof(T) shared memory
 template<size_t chunk_size, typename T>
 __global__ void search_tree_device(
@@ -108,7 +95,6 @@ __global__ void search_tree_device(
   *found = offset;
 }
 
-// TODO: Still not working properly with storing sum in element numel-1
 template<typename T>
 void sum_search(double r, const T* vec_in_d, T* vec_working_d, const size_t numel, size_t* result_d) {
   static const size_t chunk_size = BLOCK_SIZE*2;

@@ -102,9 +102,9 @@ void test_partial_scan(
 ) {
   typedef typename DIST::result_type T;
 
-  uniform_real_distribution<double> rng_select{};
+  uniform_real_distribution<double> rng_select{}; // gives 0.0 <= r < 1.0
 
-  vector<T> vec(params.numel); // gives 0.0 <= r < 1.0
+  vector<T> vec(params.numel);
   T* vec_in_d = nullptr;  CUDA_CHECK(cudaMalloc((void**)&vec_in_d,  sizeof(T)*params.numel));
   T* vec_out_d = nullptr; CUDA_CHECK(cudaMalloc((void**)&vec_out_d, sizeof(T)*params.numel));
   size_t result{};
@@ -121,13 +121,14 @@ void test_partial_scan(
 
     if (scan_type == SCAN) {
       scan_search(r, vec_in_d, vec_out_d, params.numel, result_d);
+      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
     }else if (scan_type == SUM_SEARCH) {
       sum_search(r, vec_in_d, vec_out_d, params.numel, result_d);
+      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
     } else {
       fprintf(stderr, "ERROR: unknown algorithm type. This should not occur.");
       exit(-1);
     }
-    cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
 
     auto time_end = clck::now();
 
@@ -147,6 +148,10 @@ void test_partial_scan(
 
   printf("%s on GPU\t%10g ns\n", 
       table_str, static_cast<double>(time_tot.count()) / params.num_tests);
+
+  CUDA_CHECK(cudaFree(vec_in_d));
+  CUDA_CHECK(cudaFree(vec_out_d));
+  CUDA_CHECK(cudaFree(result_d));
 }
 
 template<ScanType scan_type>
@@ -194,7 +199,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // measure_partial_scan<ScanType::SCAN>(params);
+  measure_partial_scan<ScanType::SCAN>(params);
   measure_partial_scan<ScanType::SUM_SEARCH>(params);
 
 

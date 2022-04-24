@@ -1,16 +1,18 @@
 #ifndef SCAN_CONFIG_H
 #define SCAN_CONFIG_H
 
-#define BLOCK_SIZE 64
+#define BLOCK_SIZE 512
 #define NBLOCKS(n, THREADS) (((n)+(THREADS)-1)/(THREADS))
 
 #define NUM_BANKS_4B 32
 #define LOG_NUM_BANKS_4B 5
 #define NUM_BANKS_8B 16
 #define LOG_NUM_BANKS_8B 4
-// #define CONFLICT_FREE_OFFSET(n) \
-//   ((n) >> NUM_BANKS + (n) >> (2 * LOG_NUM_BANKS))
-// #define SMEM_PER_BLOCK (BLOCK_SIZE + BLOCK_SIZE/NUM_BANKS + BLOCK_SIZE/(NUM_BANKS*NUM_BANKS))
+/*
+#define CONFLICT_FREE_OFFSET(n) \
+  ((n) >> NUM_BANKS + (n) >> (2 * LOG_NUM_BANKS))
+#define SMEM_PER_BLOCK (BLOCK_SIZE + BLOCK_SIZE/NUM_BANKS + BLOCK_SIZE/(NUM_BANKS*NUM_BANKS))
+*/
 
 template<size_t bytes> __host__ __device__
 constexpr size_t CONFLICT_FREE_OFFSET(const size_t n);
@@ -37,6 +39,19 @@ constexpr size_t SMEM_PER_BLOCK<8>() {
 }
 
 
+// Compare function to allow specialisation for floating point numbers
+template<typename T> __device__ __host__
+inline bool search_cmp(T r, T val) {
+  return r > val;
+}
+template<> __device__ __host__ 
+inline bool search_cmp<float>(float r, float val) {
+  return r > val && (r - val)/r > 100*__FLT_EPSILON__;
+}
+template<> __device__ __host__ 
+inline bool search_cmp<double>(double r, double val) {
+  return r > val && (r - val)/r > 100*__DBL_EPSILON__;
+}
 
 
 #define CUDA_CHECK(call)                                                      \
