@@ -12,6 +12,7 @@
 #include "scan_config.cuh"
 #include "sum_search.cuh"
 #include "scan.cuh"
+#include "cpu_scan.cuh"
 
 using namespace std;
 typedef chrono::high_resolution_clock clck;
@@ -89,42 +90,100 @@ Parameters parse_args(int argc, char** argv) {
   return params;
 }
 
+struct TableData {
+  const char* proc;
+  const char* scan;
+  const char* search;
+};
+struct TestResult {
+  TableData header;
+  double avg_duration;
+
+  void print() {
+    static const char* units[] = {"ns", "us", "ms", "s"};
+    double div = 1;
+    size_t u = 0;
+    while (u < 4 && avg_duration / div >= 1000) {
+      div *= 1000;
+      ++u;
+    }
+    printf("| %-10s| %-19s| %-14s|% -10g %-2s |\n", 
+        header.proc,
+        header.scan,
+        header.search,
+        avg_duration / div, units[u]);
+  }
+};
+
 enum ScanType {
-  SCAN,
+  SCAN=0,
   SUM_SEARCH,
+  CPU_NAIVE,
+  CPU_NAIVE_IN_PLACE,
+  CPU_BINARY,
+  CPU_BINARY_IN_PLACE,
+};
+
+// WARNING: must be in same order as enum since nvcc doesn't support [SCAN]={...} syntax.
+static const TableData TABLE_LOOKUP[] = {
+  {.proc = "GPU", .scan = "Work efficient",   .search = "Binary on GPU"},
+  {.proc = "GPU", .scan = "Partial",          .search = "Binary on GPU"},
+  {.proc = "CPU", .scan = "Linear",           .search = "Linear"},
+  {.proc = "CPU", .scan = "Linear, in-place", .search = "Linear"},
+  {.proc = "CPU", .scan = "Linear",           .search = "Binary"},
+  {.proc = "CPU", .scan = "Linear, in-place", .search = "Binary"}
 };
 
 template<ScanType scan_type, typename DIST>
-void test_partial_scan(
+TestResult test_partial_scan(
     const Parameters &params,
     DIST &dist,
     mt19937 &engine
 ) {
   typedef typename DIST::result_type T;
+  constexpr bool gpu_data = scan_type == SUM_SEARCH || scan_type == SCAN;
+  constexpr bool in_place = scan_type == CPU_BINARY_IN_PLACE || scan_type == CPU_NAIVE_IN_PLACE;
 
   uniform_real_distribution<double> rng_select{}; // gives 0.0 <= r < 1.0
 
   vector<T> vec(params.numel);
-  T* vec_in_d = nullptr;  CUDA_CHECK(cudaMalloc((void**)&vec_in_d,  sizeof(T)*params.numel));
-  T* vec_out_d = nullptr; CUDA_CHECK(cudaMalloc((void**)&vec_out_d, sizeof(T)*params.numel));
+  T* vec_in = nullptr;
+  T* vec_out = nullptr;
   size_t result{};
-  size_t* result_d = nullptr; CUDA_CHECK(cudaMalloc((void**)&result_d, sizeof(size_t)));
+  size_t* result_d = nullptr;
+  if (gpu_data) {
+    CUDA_CHECK(cudaMalloc((void**)&vec_in,  sizeof(T)*params.numel));
+    CUDA_CHECK(cudaMalloc((void**)&vec_out, sizeof(T)*params.numel));
+    CUDA_CHECK(cudaMalloc((void**)&result_d, sizeof(size_t)));
+  } else {
+    vec_out = new T[params.numel];
+  }
 
   clck::duration time_tot{0};
   clck::time_point time_start;
   for (long i = 0; i < params.num_tests; ++i) {
-    for (size_t n = 0; n < params.numel; ++n) vec[n] = dist(engine);
-    CUDA_CHECK(cudaMemcpy(vec_in_d, vec.data(), sizeof(T)*params.numel, cudaMemcpyHostToDevice));
+    for (auto &v : vec) v = dist(engine);
+    if (gpu_data) CUDA_CHECK(cudaMemcpy(vec_in, vec.data(), sizeof(T)*params.numel, cudaMemcpyHostToDevice));
+    if (in_place) memcpy(vec_out, vec.data(), sizeof(T)*params.numel);
+
     double r = 1.0 - rng_select(engine); // Need 0 < r <= 1
 
     time_start = clck::now();
 
     if (scan_type == SCAN) {
-      scan_search(r, vec_in_d, vec_out_d, params.numel, result_d);
+      scan_search(r, vec_in, vec_out, params.numel, result_d);
       cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
-    }else if (scan_type == SUM_SEARCH) {
-      sum_search(r, vec_in_d, vec_out_d, params.numel, result_d);
+    } else if (scan_type == SUM_SEARCH) {
+      sum_search(r, vec_in, vec_out, params.numel, result_d);
       cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+    } else if (scan_type == CPU_NAIVE) {
+      result = cpu_naive_scan_search(r, vec, vec_out);
+    } else if (scan_type == CPU_NAIVE_IN_PLACE) {
+      result = cpu_naive_scan_search_in_place(r, vec_out, params.numel);
+    } else if (scan_type == CPU_BINARY) {
+      result = cpu_scan_binary_search(r, vec, vec_out);
+    } else if (scan_type == CPU_BINARY_IN_PLACE) {
+      result = cpu_scan_binary_search_in_place(r, vec_out, params.numel);
     } else {
       fprintf(stderr, "ERROR: unknown algorithm type. This should not occur.");
       exit(-1);
@@ -132,30 +191,34 @@ void test_partial_scan(
 
     auto time_end = clck::now();
 
-    if (params.check_correctness) {
-      for (size_t j = 1; j < params.numel; j++) vec[j] += vec[j-1];
-      T rng = r*vec[params.numel-1];
-      size_t j = 0;
-      while (j < params.numel && rng > vec[j]) ++j;
-      if (j != result) printf("Different results! Expected %ld, got %ld\n", j, result);
+    if (scan_type != CPU_NAIVE && params.check_correctness) {
+      size_t cpu_result = cpu_naive_scan_search_in_place(r, vec.data(), params.numel);
+      if (cpu_result != result) printf("Different results! Expected %ld, got %ld\n", cpu_result, result);
     }
 
     time_tot += time_end - time_start;
   }
-  auto table_str = "";
-  if (scan_type == SCAN) table_str = "Full scan + search";
-  else if (scan_type == SUM_SEARCH) table_str = "Partial scan + search";
 
-  printf("%s on GPU\t%10g ns\n", 
-      table_str, static_cast<double>(time_tot.count()) / params.num_tests);
+  auto test_result = TestResult{
+    .header = TABLE_LOOKUP[scan_type],
+    .avg_duration = static_cast<double>(time_tot.count()) / params.num_tests
+  };
 
-  CUDA_CHECK(cudaFree(vec_in_d));
-  CUDA_CHECK(cudaFree(vec_out_d));
-  CUDA_CHECK(cudaFree(result_d));
+      
+
+  if (gpu_data) {
+    CUDA_CHECK(cudaFree(vec_in));
+    CUDA_CHECK(cudaFree(vec_out));
+    CUDA_CHECK(cudaFree(result_d));
+  } else {
+    delete [] vec_out;
+  }
+
+  return test_result;
 }
 
 template<ScanType scan_type>
-void measure_partial_scan(const Parameters &params) {
+TestResult measure_partial_scan(const Parameters &params) {
   CUDA_CHECK(cudaSetDevice(params.device));
 
   mt19937 engine{};
@@ -165,27 +228,25 @@ void measure_partial_scan(const Parameters &params) {
     case ArrayType::I32:
       {
         uniform_int_distribution<int> dist{0, static_cast<int>(params.max)};
-        test_partial_scan<scan_type>(params, dist, engine);
-        break;
+        return test_partial_scan<scan_type>(params, dist, engine);
       }
     case ArrayType::I64:
       {
         uniform_int_distribution<long> dist{0, static_cast<long>(params.max)};
-        test_partial_scan<scan_type>(params, dist, engine);
-        break;
+        return test_partial_scan<scan_type>(params, dist, engine);
       }
     case ArrayType::F32:
       {
         uniform_real_distribution<float> dist{0, static_cast<float>(params.max)};
-        test_partial_scan<scan_type>(params, dist, engine);
-        break;
+        return test_partial_scan<scan_type>(params, dist, engine);
       }
     case ArrayType::F64:
       {
         uniform_real_distribution<double> dist{0, static_cast<double>(params.max)};
-        test_partial_scan<scan_type>(params, dist, engine);
-        break;
+        return test_partial_scan<scan_type>(params, dist, engine);
       }
+    default:
+      return {{.proc="N/A", .scan="UNKNOWN", .search="UNKNOWN"}, 0};
   }
 }
 
@@ -199,8 +260,16 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  measure_partial_scan<ScanType::SCAN>(params);
-  measure_partial_scan<ScanType::SUM_SEARCH>(params);
+  printf("+-----------+--------------------+---------------+--------------+\n"
+         "| Processor | Scan Type          | Search Type   | Average Time |\n"
+         "+-----------+--------------------+---------------+--------------+\n");
+  measure_partial_scan<ScanType::CPU_NAIVE>(params).print();
+  measure_partial_scan<ScanType::CPU_NAIVE_IN_PLACE>(params).print();
+  measure_partial_scan<ScanType::CPU_BINARY>(params).print();
+  measure_partial_scan<ScanType::CPU_BINARY_IN_PLACE>(params).print();
+  measure_partial_scan<ScanType::SCAN>(params).print();
+  measure_partial_scan<ScanType::SUM_SEARCH>(params).print();
+  printf("+-----------+--------------------+---------------+--------------+\n");
 
 
   return 0;
