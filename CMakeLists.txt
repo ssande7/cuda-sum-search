@@ -28,3 +28,32 @@ else()
 endif()
 
 add_subdirectory(src)
+
+add_custom_target(
+  run_tests_i32
+  DEPENDS test ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh
+  VERBATIM
+  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh i32
+  )
+
+add_custom_target(
+  run_tests_i64
+  DEPENDS test ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh
+  VERBATIM
+  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh i64
+  )
+
+add_custom_target(
+  run_tests_f32
+  DEPENDS test ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh
+  VERBATIM
+  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh f32
+  )
+
+add_custom_target(
+  run_tests_f64
+  DEPENDS test ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh
+  VERBATIM
+  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh f64
+  )
+

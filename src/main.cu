@@ -42,6 +42,7 @@ struct Parameters {
   int device = 0;
   ArrayType vtype = I32;
   bool check_correctness = false;
+  bool csv_format = false;
 };
 
 // Parse command line arguments
@@ -81,12 +82,14 @@ Parameters parse_args(int argc, char** argv) {
     } else if (strcmp(argv[iarg], "-c")==0 || strcmp(argv[iarg], "--check")==0) {
       params.check_correctness = true;
       ++iarg;
+    } else if (strcmp(argv[iarg], "-csv")==0) {
+      params.csv_format = true;
+      ++iarg;
     } else throw runtime_error("Unknown argument '" + string(argv[iarg]) + "'");
   }
   if (params.vtype == ArrayType::I32 && params.numel > INT_MAX) throw runtime_error("Number of elements too large to fit in int");
-  if (params.vtype == ArrayType::I32 || params.vtype == ArrayType::I64)
-    params.max /= params.numel;
-  params.max = 100;
+  params.max /= params.numel;
+  params.max *= 0.8;
   return params;
 }
 
@@ -99,7 +102,7 @@ struct TestResult {
   TableData header;
   double avg_duration;
 
-  void print() {
+  void print() const {
     static const char* units[] = {"ns", "us", "ms", "s"};
     double div = 1;
     size_t u = 0;
@@ -112,6 +115,13 @@ struct TestResult {
         header.scan,
         header.search,
         avg_duration / div, units[u]);
+  }
+  void print_csv() const {
+    printf("%-10s\t%-19s\t%-14s\t% -10g\n",
+        header.proc,
+        header.scan,
+        header.search,
+        avg_duration);
   }
 };
 
@@ -126,12 +136,25 @@ enum ScanType {
 
 // WARNING: must be in same order as enum since nvcc doesn't support [SCAN]={...} syntax.
 static const TableData TABLE_LOOKUP[] = {
-  {.proc = "GPU", .scan = "Work efficient",   .search = "Binary on GPU"},
-  {.proc = "GPU", .scan = "Partial",          .search = "Binary on GPU"},
+  {.proc = "GPU", .scan = "Work efficient",   .search = "GPU Binary"},
+  {.proc = "GPU", .scan = "Partial",          .search = "GPU Binary"},
   {.proc = "CPU", .scan = "Linear",           .search = "Linear"},
   {.proc = "CPU", .scan = "Linear, in-place", .search = "Linear"},
   {.proc = "CPU", .scan = "Linear",           .search = "Binary"},
   {.proc = "CPU", .scan = "Linear, in-place", .search = "Binary"}
+};
+
+template<ScanType scan_type>
+TestResult measure_partial_scan(const Parameters &params);
+typedef TestResult (*TestFn)(const Parameters&);
+
+constexpr TestFn TESTS[] = {
+  &measure_partial_scan<ScanType::CPU_NAIVE>,
+  &measure_partial_scan<ScanType::CPU_NAIVE_IN_PLACE>,
+  &measure_partial_scan<ScanType::CPU_BINARY>,
+  &measure_partial_scan<ScanType::CPU_BINARY_IN_PLACE>,
+  &measure_partial_scan<ScanType::SCAN>,
+  &measure_partial_scan<ScanType::SUM_SEARCH>
 };
 
 template<ScanType scan_type, typename DIST>
@@ -199,13 +222,6 @@ TestResult test_partial_scan(
     time_tot += time_end - time_start;
   }
 
-  auto test_result = TestResult{
-    .header = TABLE_LOOKUP[scan_type],
-    .avg_duration = static_cast<double>(time_tot.count()) / params.num_tests
-  };
-
-      
-
   if (gpu_data) {
     CUDA_CHECK(cudaFree(vec_in));
     CUDA_CHECK(cudaFree(vec_out));
@@ -214,7 +230,10 @@ TestResult test_partial_scan(
     delete [] vec_out;
   }
 
-  return test_result;
+  return TestResult{
+    .header = TABLE_LOOKUP[scan_type],
+    .avg_duration = static_cast<double>(time_tot.count()) / params.num_tests
+  };
 }
 
 template<ScanType scan_type>
@@ -260,16 +279,16 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  printf("+-----------+--------------------+---------------+--------------+\n"
-         "| Processor | Scan Type          | Search Type   | Average Time |\n"
-         "+-----------+--------------------+---------------+--------------+\n");
-  measure_partial_scan<ScanType::CPU_NAIVE>(params).print();
-  measure_partial_scan<ScanType::CPU_NAIVE_IN_PLACE>(params).print();
-  measure_partial_scan<ScanType::CPU_BINARY>(params).print();
-  measure_partial_scan<ScanType::CPU_BINARY_IN_PLACE>(params).print();
-  measure_partial_scan<ScanType::SCAN>(params).print();
-  measure_partial_scan<ScanType::SUM_SEARCH>(params).print();
-  printf("+-----------+--------------------+---------------+--------------+\n");
+  if (params.csv_format) {
+    printf("Processor\tScan Type\t\tSearch Type\t Average Time (ns)\n");
+    for (auto t : TESTS) t(params).print_csv();
+  } else {
+    printf("+-----------+--------------------+---------------+--------------+\n"
+           "| Processor | Scan Type          | Search Type   | Average Time |\n"
+           "+-----------+--------------------+---------------+--------------+\n");
+    for (const auto t : TESTS) t(params).print();
+    printf("+-----------+--------------------+---------------+--------------+\n");
+  }
 
 
   return 0;
