@@ -44,14 +44,14 @@ template<typename T> __device__ __host__
 inline bool search_cmp(T r, T val) {
   return r > val;
 }
-template<> __device__ __host__ 
-inline bool search_cmp<float>(float r, float val) {
-  return r > val && (r - val)/r > 100*__FLT_EPSILON__;
-}
-template<> __device__ __host__ 
-inline bool search_cmp<double>(double r, double val) {
-  return r > val && (r - val)/r > 100*__DBL_EPSILON__;
-}
+// template<> __device__ __host__ 
+// inline bool search_cmp<float>(float r, float val) {
+//   return r > val && (r - val)/r >= __FLT_EPSILON__;
+// }
+// template<> __device__ __host__ 
+// inline bool search_cmp<double>(double r, double val) {
+//   return r > val && (r - val)/r >= __DBL_EPSILON__;
+// }
 
 
 #define CUDA_CHECK(call)                                                      \
@@ -59,7 +59,7 @@ inline bool search_cmp<double>(double r, double val) {
     cudaError_t status = call;                                                \
     if (status != cudaSuccess) {                                              \
       fprintf(stderr, "CUDA error ('%s':%i): %s.\n", __FILE__,                \
-              __LINE__, cudaGetErrorString(status));                             \
+              __LINE__, cudaGetErrorString(status));                          \
       exit(EXIT_FAILURE);                                                     \
     }                                                                         \
   } while (0)

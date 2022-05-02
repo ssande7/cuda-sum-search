@@ -99,12 +99,12 @@ __host__ __device__ inline void binary_search(
 ) {
   const T rng = r * tree[N-1];
   size_t offset = 0, max = N-1, i;
-  while (offset <= max) {
+  while (offset < max) {
     i = offset + (max - offset) / 2;
     if (search_cmp(rng, tree[i])) {
       offset = i + 1;
     } else {
-      max = i - 1;
+      max = i;
     }
   }
   *found = offset;
