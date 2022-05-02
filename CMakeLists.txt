@@ -1,14 +1,6 @@
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.18)
 project(cuda_sum_search LANGUAGES CXX CUDA)
 
-# Help info
-function(show_build_type_options)
-  message("Available build options are:")
-  message("  Release          (-O3;-DNDBUG)")
-  message("  Debug            (-g3;-ggdb)")
-  message("  RelWithDebInfo   (-O3;-g3-ggdb)")
-  message("  MinSizeRel       (-Os;-DNDEBUG)")
-endfunction()
 
 if (CMAKE_BUILD_TYPE MATCHES Debug)
   message("Building in Debug mode. Be sure to reconfigure with CMAKE_BUILD_TYPE=Release for production.")
@@ -21,10 +13,8 @@ elseif (CMAKE_BUILD_TYPE MATCHES MinSizeRel)
 elseif (CMAKE_BUILD_TYPE MATCHES "")
   message("WARNING: No build type specified. Defaulting to Release.")
   set(CMAKE_BUILD_TYPE Release)
-  show_build_type_options()
 else()
-  message("WARNING: Unknown build type. No optimisation or debug flags will be set.")
-  show_build_type_options()
+  message("WARNING: Unknown build type!")
 endif()
 
 add_subdirectory(src)

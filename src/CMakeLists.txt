@@ -18,9 +18,5 @@ add_executable(test ${SRCS})
 target_compile_options(test PRIVATE
   -Wall
   -Wextra
-  "$<$<CONFIG:DEBUG>:-g3;-ggdb>"
-  "$<$<CONFIG:RELEASE>:-O3;-DNDEBUG>"
-  "$<$<CONFIG:RELWITHDEBINFO>:-O3;-g3;-ggdb>"
-  "$<$<CONFIG:MINSIZEREL>:-Os;-DNDEBUG>"
   )
 
