@@ -36,7 +36,9 @@ enum ArrayType {
 
 struct Parameters {
   long seed = 123456789;
-  long num_tests = 100;
+  size_t num_tests_max = 100;
+  size_t num_tests_min = 10;
+  double error_tol = 0.01;
   size_t numel = 10000;
   long double max = INT_MAX;
   int device = 0;
@@ -57,9 +59,15 @@ Parameters parse_args(int argc, char** argv) {
     } else if (strcmp(argv[iarg], "-d")==0 || strcmp(argv[iarg], "--device")==0) {
       if (++iarg >= argc) throw runtime_error("Missing argument for device");
       params.device = static_cast<int>(strtol(argv[iarg++], nullptr, 10));
-    } else if (strcmp(argv[iarg], "-n")==0 || strcmp(argv[iarg], "--num-tests")==0) {
-      if (++iarg >= argc) throw runtime_error("Missing argument for number of tests");
-      params.num_tests = strtol(argv[iarg++], nullptr, 10);
+    } else if (strcmp(argv[iarg], "-n")==0 || strcmp(argv[iarg], "--num-tests-max")==0) {
+      if (++iarg >= argc) throw runtime_error("Missing argument for maximum number of tests");
+      params.num_tests_max = strtol(argv[iarg++], nullptr, 10);
+    } else if (strcmp(argv[iarg], "-nmin")==0 || strcmp(argv[iarg], "--num-tests-min")==0) {
+      if (++iarg >= argc) throw runtime_error("Missing argument for minimum number of tests");
+      params.num_tests_min = strtol(argv[iarg++], nullptr, 10);
+    } else if (strcmp(argv[iarg], "-e")==0 || strcmp(argv[iarg], "--error-tol")==0) {
+      if (++iarg >= argc) throw runtime_error("Missing argument for error tolerance");
+      params.error_tol = strtod(argv[iarg++], nullptr);
     } else if (strcmp(argv[iarg], "-N")==0 || strcmp(argv[iarg], "--num-elements")==0) {
       if (++iarg >= argc) throw runtime_error("Missing argument for number of elements");
       params.numel = strtol(argv[iarg++], nullptr, 10);
@@ -88,6 +96,7 @@ Parameters parse_args(int argc, char** argv) {
     } else throw runtime_error("Unknown argument '" + string(argv[iarg]) + "'");
   }
   if (params.vtype == ArrayType::I32 && params.numel > INT_MAX) throw runtime_error("Number of elements too large to fit in int");
+  if (params.num_tests_min > params.num_tests_max) throw runtime_error("Minimum number of tests must be <= maximum number");
   params.max /= params.numel;
   params.max *= 0.8;
   return params;
@@ -101,6 +110,9 @@ struct TableData {
 struct TestResult {
   TableData header;
   double avg_duration;
+  double stdev;
+  double err_pc;
+  size_t num_tests;
 
   void print() const {
     static const char* units[] = {"ns", "us", "ms", "s"};
@@ -117,11 +129,14 @@ struct TestResult {
         avg_duration / div, units[u]);
   }
   void print_csv() const {
-    printf("%-10s\t%-19s\t%-14s\t% -10g\n",
+    printf("%-10s\t%-19s\t%-14s\t%-10g\t%-10g\t%-10g\t%-ld\n",
         header.proc,
         header.scan,
         header.search,
-        avg_duration);
+        avg_duration,
+        stdev,
+        err_pc*100,
+        num_tests);
   }
 };
 
@@ -157,6 +172,7 @@ constexpr TestFn TESTS[] = {
   &measure_partial_scan<ScanType::SUM_SEARCH>
 };
 
+// TODO: track standard error of the mean and iterate until convergeance
 template<ScanType scan_type, typename DIST>
 TestResult test_partial_scan(
     const Parameters &params,
@@ -183,8 +199,10 @@ TestResult test_partial_scan(
   }
 
   clck::duration time_tot{0};
+  vector<double> durations{};
+  double mean = 0, var = 0, err_pc = 0;
   clck::time_point time_start;
-  for (long i = 0; i < params.num_tests; ++i) {
+  for (size_t i = 0; i < params.num_tests_max; ++i) {
     for (auto &v : vec) v = dist(engine);
     if (gpu_data) CUDA_CHECK(cudaMemcpy(vec_in, vec.data(), sizeof(T)*params.numel, cudaMemcpyHostToDevice));
     if (in_place) memcpy(vec_out, vec.data(), sizeof(T)*params.numel);
@@ -220,6 +238,15 @@ TestResult test_partial_scan(
     }
 
     time_tot += time_end - time_start;
+    durations.emplace_back(static_cast<double>((time_end - time_start).count()));
+    if (i >= params.num_tests_min) {
+      mean = static_cast<double>(time_tot.count()) / durations.size();
+      var = 0;
+      for (auto &v : durations) var += (v - mean)*(v - mean);
+      var /= durations.size();
+      err_pc = sqrt(var/durations.size()) / mean;
+      if (err_pc <= params.error_tol) break;
+    }
   }
 
   if (gpu_data) {
@@ -232,7 +259,10 @@ TestResult test_partial_scan(
 
   return TestResult{
     .header = TABLE_LOOKUP[scan_type],
-    .avg_duration = static_cast<double>(time_tot.count()) / params.num_tests
+    .avg_duration = mean,
+    .stdev = sqrt(var),
+    .err_pc = err_pc,
+    .num_tests = durations.size()
   };
 }
 
@@ -265,7 +295,7 @@ TestResult measure_partial_scan(const Parameters &params) {
         return test_partial_scan<scan_type>(params, dist, engine);
       }
     default:
-      return {{.proc="N/A", .scan="UNKNOWN", .search="UNKNOWN"}, 0};
+      return {{.proc="N/A", .scan="UNKNOWN", .search="UNKNOWN"}, 0, 0, 0, 0};
   }
 }
 
@@ -280,7 +310,7 @@ int main(int argc, char** argv) {
   }
 
   if (params.csv_format) {
-    printf("Processor\tScan Type\t\tSearch Type\t Average Time (ns)\n");
+    printf("Processor\tScan Type\t\tSearch Type\tAvg. Time (ns)\tStd. Dev.\tError (%%)\t# Tests\n");
     for (auto t : TESTS) t(params).print_csv();
   } else {
     printf("+-----------+--------------------+---------------+--------------+\n"
