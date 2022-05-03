@@ -16,6 +16,6 @@ len=${len_min}
 while [ `bc <<< "${len}*${bytes}"` -lt ${len_max} ]; do
   fname=`printf %010d ${len}`
   echo Testing $t for N=$len...
-  src/test -n ${num_tests_max} -N ${len} -t ${t} -csv > ${out_dir}/${fname}.csv
+  src/test -n ${num_tests_max} -N ${len} -t ${t} -e 0.002 -csv > ${out_dir}/${fname}.csv
   len=`bc <<< "${len}*2"`
 done
