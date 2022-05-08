@@ -122,7 +122,7 @@ struct TestResult {
       div *= 1000;
       ++u;
     }
-    printf("| %-10s| %-19s| %-14s|% -10g %-2s |\n", 
+    printf("| %-10s| %-22s| %-14s|% -10g %-2s |\n", 
         header.proc,
         header.scan,
         header.search,
@@ -147,16 +147,18 @@ enum ScanType {
   CPU_NAIVE_IN_PLACE,
   CPU_BINARY,
   CPU_BINARY_IN_PLACE,
+  CPU_BINARY_WITH_COPY,
 };
 
 // WARNING: must be in same order as enum since nvcc doesn't support [SCAN]={...} syntax.
 static const TableData TABLE_LOOKUP[] = {
-  {.proc = "GPU", .scan = "Work efficient",   .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "Partial",          .search = "GPU Binary"},
-  {.proc = "CPU", .scan = "Linear",           .search = "Linear"},
-  {.proc = "CPU", .scan = "Linear, in-place", .search = "Linear"},
-  {.proc = "CPU", .scan = "Linear",           .search = "Binary"},
-  {.proc = "CPU", .scan = "Linear, in-place", .search = "Binary"}
+  {.proc = "GPU", .scan = "Work efficient",         .search = "GPU Binary"},
+  {.proc = "GPU", .scan = "Partial",                .search = "GPU Binary"},
+  {.proc = "CPU", .scan = "Linear",                 .search = "Linear"},
+  {.proc = "CPU", .scan = "Linear, in-place",       .search = "Linear"},
+  {.proc = "CPU", .scan = "Linear",                 .search = "Binary"},
+  {.proc = "CPU", .scan = "Linear, in-place",       .search = "Binary"},
+  {.proc = "CPU", .scan = "Linear, data from GPU",  .search = "Binary"}
 };
 
 template<ScanType scan_type>
@@ -168,6 +170,7 @@ constexpr TestFn TESTS[] = {
   &measure_partial_scan<ScanType::CPU_NAIVE_IN_PLACE>,
   &measure_partial_scan<ScanType::CPU_BINARY>,
   &measure_partial_scan<ScanType::CPU_BINARY_IN_PLACE>,
+  &measure_partial_scan<ScanType::CPU_BINARY_WITH_COPY>,
   &measure_partial_scan<ScanType::SCAN>,
   &measure_partial_scan<ScanType::SUM_SEARCH>
 };
@@ -180,7 +183,7 @@ TestResult test_partial_scan(
     mt19937 &engine
 ) {
   typedef typename DIST::result_type T;
-  constexpr bool gpu_data = scan_type == SUM_SEARCH || scan_type == SCAN;
+  constexpr bool gpu_data = scan_type == SUM_SEARCH || scan_type == SCAN || scan_type == CPU_BINARY_WITH_COPY;
   constexpr bool in_place = scan_type == CPU_BINARY_IN_PLACE || scan_type == CPU_NAIVE_IN_PLACE;
 
   uniform_real_distribution<double> rng_select{}; // gives 0.0 <= r < 1.0
@@ -195,6 +198,10 @@ TestResult test_partial_scan(
     CUDA_CHECK(cudaMalloc((void**)&vec_out, sizeof(T)*params.numel));
     CUDA_CHECK(cudaMalloc((void**)&result_d, sizeof(size_t)));
   } else {
+    vec_out = new T[params.numel];
+  }
+  if (scan_type == CPU_BINARY_WITH_COPY) {
+    CUDA_CHECK(cudaFree(vec_out));
     vec_out = new T[params.numel];
   }
 
@@ -225,6 +232,10 @@ TestResult test_partial_scan(
       result = cpu_scan_binary_search(r, vec, vec_out);
     } else if (scan_type == CPU_BINARY_IN_PLACE) {
       result = cpu_scan_binary_search_in_place(r, vec_out, params.numel);
+    } else if (scan_type == CPU_BINARY_WITH_COPY) {
+      // Include copy time in benchmark
+      CUDA_CHECK(cudaMemcpy(vec.data(), vec_in, sizeof(T)*params.numel, cudaMemcpyDeviceToHost));
+      result = cpu_scan_binary_search(r, vec, vec_out);
     } else {
       fprintf(stderr, "ERROR: unknown algorithm type. This should not occur.");
       exit(-1);
@@ -239,7 +250,7 @@ TestResult test_partial_scan(
 
     time_tot += time_end - time_start;
     durations.emplace_back(static_cast<double>((time_end - time_start).count()));
-    if (i >= params.num_tests_min) {
+    if (i+1 >= params.num_tests_min) {
       mean = static_cast<double>(time_tot.count()) / durations.size();
       var = 0;
       for (auto &v : durations) var += (v - mean)*(v - mean);
@@ -251,7 +262,10 @@ TestResult test_partial_scan(
 
   if (gpu_data) {
     CUDA_CHECK(cudaFree(vec_in));
-    CUDA_CHECK(cudaFree(vec_out));
+    if (scan_type == CPU_BINARY_WITH_COPY)
+      delete[] vec_out;
+    else
+      CUDA_CHECK(cudaFree(vec_out));
     CUDA_CHECK(cudaFree(result_d));
   } else {
     delete [] vec_out;
@@ -313,11 +327,11 @@ int main(int argc, char** argv) {
     printf("Processor\tScan Type\t\tSearch Type\tAvg. Time (ns)\tStd. Dev.\tError (%%)\t# Tests\n");
     for (auto t : TESTS) t(params).print_csv();
   } else {
-    printf("+-----------+--------------------+---------------+--------------+\n"
-           "| Processor | Scan Type          | Search Type   | Average Time |\n"
-           "+-----------+--------------------+---------------+--------------+\n");
+    printf("+-----------+-----------------------+---------------+--------------+\n"
+           "| Processor | Scan Type             | Search Type   | Average Time |\n"
+           "+-----------+-----------------------+---------------+--------------+\n");
     for (const auto t : TESTS) t(params).print();
-    printf("+-----------+--------------------+---------------+--------------+\n");
+    printf("+-----------+-----------------------+---------------+--------------+\n");
   }
 
 
