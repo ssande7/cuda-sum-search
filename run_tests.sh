@@ -18,4 +18,5 @@ while [ `bc <<< "${len}*${bytes}"` -lt ${len_max} ]; do
   echo Testing $t for N=$len...
   src/test -n ${num_tests_max} -N ${len} -t ${t} -e 0.0025 -csv > ${out_dir}/${fname}.csv
   len=`bc <<< "${len}*2"`
+  num_tests_max=`bc <<< "${num_tests_max}*8/10"`
 done
