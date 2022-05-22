@@ -3,17 +3,17 @@
 
 #include "scan_config.cuh"
 
+namespace partial_extra_mem {
+
 // Assumes chunk_size is 2*blockDim.x
 // Call with NBLOCKS(N, chunk_size)
-// Stride should be pow(chunk_size, step), where step is 0-based
-// Call repeatedly until stride*chunk_size >= N (ie. next step would only load 1 data point
+// Call repeatedly until chunk_size >= N (ie. next step would only load 1 data point
 template<size_t chunk_size, typename T>
 __global__ void scan_up_sweep(
     const T* g_idata,       // Input data
-    T* g_odata,             // Output data - allocate NBLOCKS(N, chunk_size)*chunk_size
-    const size_t N,            // Number of elements in input data
-    const size_t end_idx,      // Index read by thread that should load the N-1th element instead of reading off the end
-    const size_t stride = 1    // Stride for reading from/writing to idata and odata
+    T* g_odata,             // Output data
+    T* g_aggregates,        // Storage for aggregate of each block
+    const size_t N          // Number of elements in input data
 ) {
   // Can't declare temp directly as s_data since type changes in teplating
   // break compilation. Declare as double2 to get 16 byte memory alignment.
@@ -24,24 +24,16 @@ __global__ void scan_up_sweep(
   size_t block_offset = blockIdx.x * chunk_size;
   int offset = 1;
 
-  // Load data into block's shared memory, padding to avoid bank conflicts, and
-  // stepping by stride for handling of large arrays
+  // Load data into block's shared memory, padding to avoid bank conflicts
   int ai = tid;
   int bi = tid + chunk_size/2;
   int bank_offset_a = CONFLICT_FREE_OFFSET<sizeof(T)>(ai);
   int bank_offset_b = CONFLICT_FREE_OFFSET<sizeof(T)>(bi);
-  bool overwrite_last = false;
-  size_t addr_a = (block_offset + ai + 1)*stride - 1;
-  size_t addr_b = (block_offset + bi + 1)*stride - 1;
-  if (addr_a == end_idx) {
-    s_data[ai + bank_offset_a] = g_idata[N-1];
-    overwrite_last = true;
-  } else if (addr_a < N) s_data[ai + bank_offset_a] = g_idata[addr_a];
+  size_t addr_a = (block_offset + ai + 1) - 1;
+  size_t addr_b = (block_offset + bi + 1) - 1;
+  if (addr_a < N) s_data[ai + bank_offset_a] = g_idata[addr_a];
   else s_data[ai + bank_offset_a] = 0;
-  if (addr_b == end_idx) {
-    s_data[bi + bank_offset_b] = g_idata[N-1];
-    overwrite_last = true;
-  } else if (addr_b < N) s_data[bi + bank_offset_b] = g_idata[addr_b];
+  if (addr_b < N) s_data[bi + bank_offset_b] = g_idata[addr_b];
   else s_data[bi + bank_offset_b] = 0;
 
 
@@ -61,29 +53,44 @@ __global__ void scan_up_sweep(
   // Assume sufficient space is allocated
   if (addr_a < N) g_odata[addr_a] = s_data[ai + bank_offset_a];
   if (addr_b < N) g_odata[addr_b] = s_data[bi + bank_offset_b];
-  // If this block contains the final element (idx N-1), store the total there instead
-  if (overwrite_last) {
-    int idx = chunk_size - 1;
-    idx += CONFLICT_FREE_OFFSET<sizeof(T)>(idx);
-    g_odata[N-1] = s_data[idx];
-  }
+
+  // Store block aggregates for next stage
+  if (tid == blockDim.x - 1) g_aggregates[blockIdx.x] = s_data[bi + bank_offset_b];
+  // Store length of scanned array
+  if (tid == 0 && blockIdx.x == 0)
+    *reinterpret_cast<size_t*>(reinterpret_cast<uint8_t*>(g_aggregates)-32) = N;
 }
 
 
-// Use 1 block, 1 thread, n_steps * sizeof(T) shared memory
+// Use 1 block, 1 thread
 template<size_t chunk_size, typename T>
 __global__ void search_tree_device(
-  const double r,     // Random number - 0 <= r < 1
-  const T* tree,      // Output of up-sweep
-  const size_t N,        // Number of elements in the input array
-  const size_t begin,    // The final stride from scanning (>= N), divided by 2 until it's < N
-  size_t* found          // output -> index of chosen element
+  const double r,       // Random number - 0 <= r < 1
+  const T*const tree,   // Output of up-sweep
+  const size_t N,       // Number of elements in the input array
+  const T* agg_begin,   // pointer to final level of aggregate tree (chunk_size elements)
+  size_t* found         // output -> index of chosen element
 ) {
-  const T rng = r * tree[N-1];
-
+  size_t len = *reinterpret_cast<const size_t*>(reinterpret_cast<const uint8_t*>(agg_begin) - 32);
+  const T rng = r * *agg_begin;
   size_t offset = 0;
   T val_offset = 0;
-  for (size_t i = begin; i > 0; i >>= 1) {
+  while (len < N) {
+    agg_begin = reinterpret_cast<const T*>(reinterpret_cast<const uint8_t*>(agg_begin) - 32 - (len*sizeof(T)+31)/32*32);
+    for (size_t i = chunk_size >> 1; i > 0; i >>= 1) {
+      size_t j = offset + i - 1;
+      if (j >= len) continue;
+      T val = agg_begin[j];
+      if (search_cmp(rng, val_offset + val)) {
+        val_offset += val;
+        offset += i;
+      }
+    }
+    len = *reinterpret_cast<const size_t*>((const uint8_t*)agg_begin - 32);
+    offset *= chunk_size;
+  }
+
+  for (size_t i = chunk_size >> 1; i > 0; i >>= 1) {
     size_t j = offset + i - 1;
     if (j >= N) continue;
     T val = tree[j];
@@ -96,20 +103,39 @@ __global__ void search_tree_device(
 }
 
 template<typename T>
-void sum_search(double r, const T* vec_in_d, T* vec_working_d, const size_t numel, size_t* result_d) {
+size_t get_extra_mem(size_t N) {
   static const size_t chunk_size = BLOCK_SIZE*2;
-  size_t N = NBLOCKS(numel, chunk_size);
-  scan_up_sweep<chunk_size><<<N, BLOCK_SIZE, sizeof(T)*SMEM_PER_BLOCK<sizeof(T)>()>>>(vec_in_d, vec_working_d, numel, numel-1);
-  size_t stride = chunk_size;
-  for (; stride < numel; stride *= chunk_size) {
+  size_t extra = 0;
+  while (N > chunk_size) {
     N = NBLOCKS(N, chunk_size);
-    scan_up_sweep<chunk_size><<<N, BLOCK_SIZE, sizeof(T)*SMEM_PER_BLOCK<sizeof(T)>()>>>(
-          vec_working_d, vec_working_d, numel, ((numel+stride-1)/stride) * stride-1, stride
-          );
+    extra += (N*sizeof(T) + 31)/32 * 32 + 32;   // Space for previous length. cudaMalloc aligns to 32 byte boundaries
   }
-  size_t begin = stride;
-  while (begin >= numel) begin >>= 1;
-  search_tree_device<chunk_size><<<1,1>>>(r, vec_working_d, numel, begin, result_d);
+  extra += 64;
+  return extra;
 }
 
+template<typename T>
+void sum_search(double r, const T* vec_in_d, T* vec_working_d, void* extra_mem_d, const size_t numel, size_t* result_d) {
+  static const size_t chunk_size = BLOCK_SIZE*2;
+  size_t N = NBLOCKS(numel, chunk_size);
+  T* agg_d = reinterpret_cast<T*>(reinterpret_cast<uint8_t*>(extra_mem_d)+32);
+  scan_up_sweep<chunk_size><<<N, BLOCK_SIZE, sizeof(T)*SMEM_PER_BLOCK<sizeof(T)>()>>>(vec_in_d, vec_working_d, agg_d, numel);
+  cudaDeviceSynchronize();
+  CUDA_CHECK(cudaGetLastError());
+  while (N > 1) {
+    size_t this_N = N;
+    T* last_agg_d = agg_d;
+    agg_d = reinterpret_cast<T*>(reinterpret_cast<uint8_t*>(agg_d) + 32 + (N*sizeof(T)+31)/32*32);
+    N = NBLOCKS(N, chunk_size);
+    scan_up_sweep<chunk_size><<<N, BLOCK_SIZE, sizeof(T)*SMEM_PER_BLOCK<sizeof(T)>()>>>(
+          last_agg_d, last_agg_d, agg_d, this_N);
+    cudaDeviceSynchronize();
+    CUDA_CHECK(cudaGetLastError());
+  }
+  search_tree_device<chunk_size><<<1,1>>>(r, vec_working_d, numel, agg_d, result_d);
+  cudaDeviceSynchronize();
+  CUDA_CHECK(cudaGetLastError());
+}
+
+}
 #endif

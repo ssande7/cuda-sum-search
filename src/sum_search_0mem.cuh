@@ -1,5 +1,5 @@
-#ifndef SUM_SEARCH_H
-#define SUM_SEARCH_H
+#ifndef SUM_SEARCH_0MEM_H
+#define SUM_SEARCH_0MEM_H
 
 #include "scan_config.cuh"
 

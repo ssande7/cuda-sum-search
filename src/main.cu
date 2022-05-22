@@ -1,5 +1,6 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <cub/cub.cuh>
 
 #include <string>
 #include <vector>
@@ -11,6 +12,7 @@
 
 #include "scan_config.cuh"
 #include "sum_search.cuh"
+#include "sum_search_0mem.cuh"
 #include "scan.cuh"
 #include "cpu_scan.cuh"
 
@@ -97,6 +99,7 @@ Parameters parse_args(int argc, char** argv) {
   }
   if (params.vtype == ArrayType::I32 && params.numel > INT_MAX) throw runtime_error("Number of elements too large to fit in int");
   if (params.num_tests_min > params.num_tests_max) throw runtime_error("Minimum number of tests must be <= maximum number");
+  if (params.vtype == ArrayType::F32) fprintf(stderr, "WARNING: results for large arrays of single precision floats may be inaccurate\n");
   params.max /= params.numel;
   params.max *= 0.8;
   return params;
@@ -141,24 +144,28 @@ struct TestResult {
 };
 
 enum ScanType {
-  SCAN=0,
-  SUM_SEARCH,
-  CPU_NAIVE,
+  CPU_NAIVE=0,
   CPU_NAIVE_IN_PLACE,
   CPU_BINARY,
   CPU_BINARY_IN_PLACE,
   CPU_BINARY_WITH_COPY,
+  SCAN,
+  PARTIAL_0MEM,
+  PARTIAL,
+  CUB,
 };
 
 // WARNING: must be in same order as enum since nvcc doesn't support [SCAN]={...} syntax.
 static const TableData TABLE_LOOKUP[] = {
-  {.proc = "GPU", .scan = "Work efficient",         .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "Partial",                .search = "GPU Binary"},
   {.proc = "CPU", .scan = "Linear",                 .search = "Linear"},
   {.proc = "CPU", .scan = "Linear, in-place",       .search = "Linear"},
   {.proc = "CPU", .scan = "Linear",                 .search = "Binary"},
   {.proc = "CPU", .scan = "Linear, in-place",       .search = "Binary"},
-  {.proc = "CPU", .scan = "Linear, data from GPU",  .search = "Binary"}
+  {.proc = "CPU", .scan = "Linear, data from GPU",  .search = "Binary"},
+  {.proc = "GPU", .scan = "Work efficient",         .search = "GPU Binary"},
+  {.proc = "GPU", .scan = "Partial",                .search = "GPU Binary"},
+  {.proc = "GPU", .scan = "Partial, extra memory",  .search = "GPU Binary"},
+  {.proc = "GPU", .scan = "CUB",                    .search = "GPU Binary"}
 };
 
 template<ScanType scan_type>
@@ -172,10 +179,11 @@ constexpr TestFn TESTS[] = {
   &measure_partial_scan<ScanType::CPU_BINARY_IN_PLACE>,
   &measure_partial_scan<ScanType::CPU_BINARY_WITH_COPY>,
   &measure_partial_scan<ScanType::SCAN>,
-  &measure_partial_scan<ScanType::SUM_SEARCH>
+  &measure_partial_scan<ScanType::PARTIAL_0MEM>,
+  &measure_partial_scan<ScanType::PARTIAL>,
+  &measure_partial_scan<ScanType::CUB>
 };
 
-// TODO: track standard error of the mean and iterate until convergeance
 template<ScanType scan_type, typename DIST>
 TestResult test_partial_scan(
     const Parameters &params,
@@ -183,14 +191,21 @@ TestResult test_partial_scan(
     mt19937 &engine
 ) {
   typedef typename DIST::result_type T;
-  constexpr bool gpu_data = scan_type == SUM_SEARCH || scan_type == SCAN || scan_type == CPU_BINARY_WITH_COPY;
-  constexpr bool in_place = scan_type == CPU_BINARY_IN_PLACE || scan_type == CPU_NAIVE_IN_PLACE;
+  constexpr bool gpu_data =  scan_type == PARTIAL_0MEM
+                          || scan_type == PARTIAL
+                          || scan_type == SCAN
+                          || scan_type == CPU_BINARY_WITH_COPY
+                          || scan_type == CUB;
+  constexpr bool in_place =  scan_type == CPU_BINARY_IN_PLACE
+                          || scan_type == CPU_NAIVE_IN_PLACE;
 
   uniform_real_distribution<double> rng_select{}; // gives 0.0 <= r < 1.0
 
   vector<T> vec(params.numel);
   T* vec_in = nullptr;
   T* vec_out = nullptr;
+  void* extra_d = nullptr;
+  size_t extra_bytes = 0;
   size_t result{};
   size_t* result_d = nullptr;
   if (gpu_data) {
@@ -203,6 +218,14 @@ TestResult test_partial_scan(
   if (scan_type == CPU_BINARY_WITH_COPY) {
     CUDA_CHECK(cudaFree(vec_out));
     vec_out = new T[params.numel];
+  }
+  // Get storage requirement
+  if (scan_type == CUB) {
+    cub::DeviceScan::InclusiveSum(extra_d, extra_bytes, vec_in, vec_out, params.numel);
+    CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
+  } else if (scan_type == PARTIAL) {
+    extra_bytes = partial_extra_mem::get_extra_mem<T>(params.numel);
+    CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
   }
 
   clck::duration time_tot{0};
@@ -221,8 +244,11 @@ TestResult test_partial_scan(
     if (scan_type == SCAN) {
       scan_search(r, vec_in, vec_out, params.numel, result_d);
       cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
-    } else if (scan_type == SUM_SEARCH) {
-      sum_search(r, vec_in, vec_out, params.numel, result_d);
+    } else if (scan_type == PARTIAL_0MEM) {
+      partial_0mem::sum_search(r, vec_in, vec_out, params.numel, result_d);
+      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+    } else if (scan_type == PARTIAL) {
+      partial_extra_mem::sum_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
       cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
     } else if (scan_type == CPU_NAIVE) {
       result = cpu_naive_scan_search(r, vec, vec_out);
@@ -234,8 +260,12 @@ TestResult test_partial_scan(
       result = cpu_scan_binary_search_in_place(r, vec_out, params.numel);
     } else if (scan_type == CPU_BINARY_WITH_COPY) {
       // Include copy time in benchmark
-      CUDA_CHECK(cudaMemcpy(vec.data(), vec_in, sizeof(T)*params.numel, cudaMemcpyDeviceToHost));
+      cudaMemcpy(vec.data(), vec_in, sizeof(T)*params.numel, cudaMemcpyDeviceToHost);
       result = cpu_scan_binary_search(r, vec, vec_out);
+    } else if (scan_type == CUB) {
+      cub::DeviceScan::InclusiveSum(extra_d, extra_bytes, vec_in, vec_out, params.numel);
+      binary_search_device<<<1,1>>>(r, vec_out, params.numel, result_d);
+      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
     } else {
       fprintf(stderr, "ERROR: unknown algorithm type. This should not occur.");
       exit(-1);
@@ -245,7 +275,7 @@ TestResult test_partial_scan(
 
     if (scan_type != CPU_NAIVE && params.check_correctness) {
       size_t cpu_result = cpu_naive_scan_search_in_place(r, vec.data(), params.numel);
-      if (cpu_result != result) printf("Different results! Expected %ld, got %ld\n", cpu_result, result);
+      if (cpu_result != result) fprintf(stderr, "Different results! Expected %ld, got %ld from r=%g\n", cpu_result, result, r);
     }
 
     time_tot += time_end - time_start;
