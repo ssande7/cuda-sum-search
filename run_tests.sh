@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 t=$1
-max_mem=8 #GB
+max_mem=6 #GB
 num_tests_max=5000
 len_min=500
 len_max=`bc <<< "${max_mem}*1024*1024*1024"`
-max_slow=`bc <<< "256*1024*1024"`
-max_cpu=`bc <<< "1024*1024*1024"`
+max_slow=`bc <<< "128*1024*1024"`
+max_cpu=`bc <<< "256*1024*1024"`
 
 if [[ "${t}" == i32 ]] || [[ "${t}" == f32 ]]; then
   bytes=4

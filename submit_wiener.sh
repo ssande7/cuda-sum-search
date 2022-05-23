@@ -26,7 +26,7 @@ squeue --format "%j %t" | grep $name | grep -v ' CG' || sbatch  <<EOF
 #!/usr/bin/env bash
 #SBATCH --job-name=${name}
 #SBATCH --nodes=1 --ntasks-per-node=2
-#SBATCH --mem-per-cpu=8G
+#SBATCH --mem-per-cpu=16G
 #SBATCH --partition=gpu
 #SBATCH --qos=normal
 #SBATCH --gres=gpu:tesla:1
