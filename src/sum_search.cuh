@@ -29,8 +29,8 @@ __global__ void scan_up_sweep(
   int bi = tid + chunk_size/2;
   int bank_offset_a = CONFLICT_FREE_OFFSET<sizeof(T)>(ai);
   int bank_offset_b = CONFLICT_FREE_OFFSET<sizeof(T)>(bi);
-  size_t addr_a = (block_offset + ai + 1) - 1;
-  size_t addr_b = (block_offset + bi + 1) - 1;
+  size_t addr_a = block_offset + ai;
+  size_t addr_b = block_offset + bi;
   if (addr_a < N) s_data[ai + bank_offset_a] = g_idata[addr_a];
   else s_data[ai + bank_offset_a] = 0;
   if (addr_b < N) s_data[bi + bank_offset_b] = g_idata[addr_b];
