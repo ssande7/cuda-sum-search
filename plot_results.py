@@ -26,20 +26,24 @@ def main():
     if not args.linear:
         ax.set_xscale('log')
         ax.set_yscale('log')
+    colours = plt.cm.Paired(np.linspace(0,1,12))
+    print(colours)
+    colours = colours[[0, 1, 2, 3, 11, 5, 7, 8, 9],:]
     for row in range(nrows):
         if row in args.exclude:
             # dummy plot to keep colours consistent
             ax.plot(np.nan, np.nan, label='_')
             continue
         times = np.array([d.iloc[row, 3] for d in data])
-        err = np.array([d.iloc[row, 5] for d in data])/100 * times
+        err = np.array([d.iloc[row, 4] for d in data]) # standard deviation as error bar
         ax.errorbar(N, times,
-                    # yerr=err,
+                    yerr=err,
                     fmt='.-',
                     label=f'{data[0].iloc[row, 0].rstrip()}: {data[0].iloc[row, 1].rstrip()}. {data[0].iloc[row, 2].rstrip()} search.'
                             .replace(': Linear', ': Linear scan')
                             .replace('efficient', 'efficient scan')
-                            .replace('Partial', 'Partial scan')
+                            .replace('Partial', 'Partial scan'),
+                    color=colours[row,:]
                     )
     if args.ymax:
         plt.ylim(top=args.ymax, bottom=0)
