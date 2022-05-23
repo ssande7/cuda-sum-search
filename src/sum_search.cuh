@@ -120,8 +120,6 @@ void sum_search(double r, const T* vec_in_d, T* vec_working_d, void* extra_mem_d
   size_t N = NBLOCKS(numel, chunk_size);
   T* agg_d = reinterpret_cast<T*>(reinterpret_cast<uint8_t*>(extra_mem_d)+32);
   scan_up_sweep<chunk_size><<<N, BLOCK_SIZE, sizeof(T)*SMEM_PER_BLOCK<sizeof(T)>()>>>(vec_in_d, vec_working_d, agg_d, numel);
-  cudaDeviceSynchronize();
-  CUDA_CHECK(cudaGetLastError());
   while (N > 1) {
     size_t this_N = N;
     T* last_agg_d = agg_d;
@@ -129,12 +127,8 @@ void sum_search(double r, const T* vec_in_d, T* vec_working_d, void* extra_mem_d
     N = NBLOCKS(N, chunk_size);
     scan_up_sweep<chunk_size><<<N, BLOCK_SIZE, sizeof(T)*SMEM_PER_BLOCK<sizeof(T)>()>>>(
           last_agg_d, last_agg_d, agg_d, this_N);
-    cudaDeviceSynchronize();
-    CUDA_CHECK(cudaGetLastError());
   }
   search_tree_device<chunk_size><<<1,1>>>(r, vec_working_d, numel, agg_d, result_d);
-  cudaDeviceSynchronize();
-  CUDA_CHECK(cudaGetLastError());
 }
 
 }
