@@ -1,6 +1,7 @@
 #ifndef CLI_CONFIG_H
 #define CLI_CONFIG_H
 
+#include <stdexcept>
 #include <unordered_set>
 
 #include "test_result.h"
@@ -26,7 +27,7 @@ enum ScanType {
 };
 
 // WARNING: must be in same order as enum since nvcc doesn't support [SCAN]={...} syntax.
-static const TableData TABLE_LOOKUP[] = {
+constexpr TableData TABLE_LOOKUP[] = {
   {.proc = "CPU", .scan = "Linear",                 .search = "Linear"},
   {.proc = "CPU", .scan = "Linear, in-place",       .search = "Linear"},
   {.proc = "CPU", .scan = "Linear",                 .search = "Binary"},
@@ -54,7 +55,8 @@ struct Parameters {
 
 template<ScanType scan_type>
 TestResult measure_partial_scan(const Parameters &params);
-typedef TestResult (*TestFn)(const Parameters&);
+
+using TestFn = TestResult (*)(const Parameters&);
 constexpr TestFn TESTS[] = {
   &measure_partial_scan<ScanType::CPU_NAIVE>,
   &measure_partial_scan<ScanType::CPU_NAIVE_IN_PLACE>,
