@@ -24,20 +24,22 @@ enum ScanType {
   PARTIAL,
   CUB,
   PARTIAL_HALFMEM,
+  PARTIAL_HALFMEM_COALESCED,
 };
 
 // WARNING: must be in same order as enum since nvcc doesn't support [SCAN]={...} syntax.
 constexpr TableData TABLE_LOOKUP[] = {
-  {.proc = "CPU", .scan = "Linear",                 .search = "Linear"},
-  {.proc = "CPU", .scan = "Linear, in-place",       .search = "Linear"},
-  {.proc = "CPU", .scan = "Linear",                 .search = "Binary"},
-  {.proc = "CPU", .scan = "Linear, in-place",       .search = "Binary"},
-  {.proc = "CPU", .scan = "Linear, data from GPU",  .search = "Binary"},
-  {.proc = "GPU", .scan = "Work efficient",         .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "Partial",                .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "Partial, extra memory",  .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "CUB",                    .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "Partial, half output",   .search = "GPU Binary"}
+  {.proc = "CPU", .scan = "Linear",                         .search = "Linear"},
+  {.proc = "CPU", .scan = "Linear, in-place",               .search = "Linear"},
+  {.proc = "CPU", .scan = "Linear",                         .search = "Binary"},
+  {.proc = "CPU", .scan = "Linear, in-place",               .search = "Binary"},
+  {.proc = "CPU", .scan = "Linear, data from GPU",          .search = "Binary"},
+  {.proc = "GPU", .scan = "Work efficient",                 .search = "GPU Binary"},
+  {.proc = "GPU", .scan = "Partial",                        .search = "GPU Binary"},
+  {.proc = "GPU", .scan = "Partial, extra memory",          .search = "GPU Binary"},
+  {.proc = "GPU", .scan = "CUB",                            .search = "GPU Binary"},
+  {.proc = "GPU", .scan = "Partial, half output",           .search = "GPU Binary"},
+  {.proc = "GPU", .scan = "Partial, half out, coalesced",   .search = "GPU Binary"},
 };
 
 struct Parameters {
@@ -68,7 +70,8 @@ constexpr TestFn TESTS[] = {
   &measure_partial_scan<ScanType::PARTIAL_0MEM>,
   &measure_partial_scan<ScanType::PARTIAL>,
   &measure_partial_scan<ScanType::CUB>,
-  &measure_partial_scan<ScanType::PARTIAL_HALFMEM>
+  &measure_partial_scan<ScanType::PARTIAL_HALFMEM>,
+  &measure_partial_scan<ScanType::PARTIAL_HALFMEM_COALESCED>,
 };
 
 // Parse command line arguments

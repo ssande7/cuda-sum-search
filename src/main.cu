@@ -17,6 +17,7 @@
 #include "sum_search.cuh"
 #include "sum_search_0mem.cuh"
 #include "sum_search_halfmem.cuh"
+#include "sum_search_halfmem_coalesced.cuh"
 #include "scan.cuh"
 #include "cpu_scan.cuh"
 
@@ -36,7 +37,8 @@ TestResult test_partial_scan(
                           || scan_type == SCAN
                           || scan_type == CPU_BINARY_WITH_COPY
                           || scan_type == CUB
-                          || scan_type == PARTIAL_HALFMEM;
+                          || scan_type == PARTIAL_HALFMEM
+                          || scan_type == PARTIAL_HALFMEM_COALESCED;
   constexpr bool in_place =  scan_type == CPU_BINARY_IN_PLACE
                           || scan_type == CPU_NAIVE_IN_PLACE;
 
@@ -70,6 +72,9 @@ TestResult test_partial_scan(
   } else if (scan_type == PARTIAL_HALFMEM) {
     extra_bytes = partial_half_mem::get_extra_mem<T>(params.numel);
     CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
+  } else if (scan_type == PARTIAL_HALFMEM_COALESCED) {
+    extra_bytes = partial_half_mem_coalesced::get_extra_mem<T>(params.numel);
+    CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
   }
 
   clck::duration time_tot{0};
@@ -96,6 +101,9 @@ TestResult test_partial_scan(
       cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
     } else if (scan_type == PARTIAL_HALFMEM) {
       partial_half_mem::sum_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
+      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+    } else if (scan_type == PARTIAL_HALFMEM_COALESCED) {
+      partial_half_mem_coalesced::sum_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
       cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
     } else if (scan_type == CPU_NAIVE) {
       result = cpu_naive_scan_search(r, vec, vec_out);
@@ -218,14 +226,14 @@ int main(int argc, char** argv) {
 
   // Run tests
   if (params.csv_format) {
-    printf("Processor\tScan Type\t\tSearch Type\tAvg. Time (ns)\tStd. Dev.\tError (%%)\t# Tests\n");
+    printf("Processor\tScan Type\t\t\tSearch Type\tAvg. Time (ns)\tStd. Dev.\tError (%%)\t# Tests\n");
     for (auto t : TESTS) t(params).print_csv();
   } else {
-    printf("+-----------+-----------------------+---------------+--------------+\n"
-           "| Processor | Scan Type             | Search Type   | Average Time |\n"
-           "+-----------+-----------------------+---------------+--------------+\n");
+    printf("+-----------+-------------------------------+---------------+--------------+\n"
+           "| Processor | Scan Type                     | Search Type   | Average Time |\n"
+           "+-----------+-------------------------------+---------------+--------------+\n");
     for (const auto t : TESTS) t(params).print();
-    printf("+-----------+-----------------------+---------------+--------------+\n");
+    printf("+-----------+-------------------------------+---------------+--------------+\n");
   }
 
   return 0;
