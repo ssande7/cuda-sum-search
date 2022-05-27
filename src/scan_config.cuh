@@ -27,15 +27,15 @@ constexpr size_t CONFLICT_FREE_OFFSET<8>(const size_t n) {
 }
 
 template<size_t bytes> __host__ __device__
-constexpr size_t SMEM_PER_BLOCK();
+constexpr size_t SMEM_PER_BLOCK(int data_per_thread=2);
 
 template<> __host__ __device__
-constexpr size_t SMEM_PER_BLOCK<4>() {
-   return 2*(BLOCK_SIZE + BLOCK_SIZE/NUM_BANKS_4B + BLOCK_SIZE/(NUM_BANKS_4B*NUM_BANKS_4B));
+constexpr size_t SMEM_PER_BLOCK<4>(int data_per_thread) {
+   return data_per_thread*(BLOCK_SIZE + BLOCK_SIZE/NUM_BANKS_4B + BLOCK_SIZE/(NUM_BANKS_4B*NUM_BANKS_4B));
 }
 template<> __host__ __device__
-constexpr size_t SMEM_PER_BLOCK<8>() {
-   return 2*(BLOCK_SIZE + BLOCK_SIZE/NUM_BANKS_8B + BLOCK_SIZE/(NUM_BANKS_8B*NUM_BANKS_8B));
+constexpr size_t SMEM_PER_BLOCK<8>(int data_per_thread) {
+   return data_per_thread*(BLOCK_SIZE + BLOCK_SIZE/NUM_BANKS_8B + BLOCK_SIZE/(NUM_BANKS_8B*NUM_BANKS_8B));
 }
 
 

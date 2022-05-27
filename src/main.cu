@@ -16,6 +16,7 @@
 #include "scan_config.cuh"
 #include "sum_search.cuh"
 #include "sum_search_0mem.cuh"
+#include "sum_search_halfmem.cuh"
 #include "scan.cuh"
 #include "cpu_scan.cuh"
 
@@ -34,7 +35,8 @@ TestResult test_partial_scan(
                           || scan_type == PARTIAL
                           || scan_type == SCAN
                           || scan_type == CPU_BINARY_WITH_COPY
-                          || scan_type == CUB;
+                          || scan_type == CUB
+                          || scan_type == PARTIAL_HALFMEM;
   constexpr bool in_place =  scan_type == CPU_BINARY_IN_PLACE
                           || scan_type == CPU_NAIVE_IN_PLACE;
 
@@ -65,6 +67,9 @@ TestResult test_partial_scan(
   } else if (scan_type == PARTIAL) {
     extra_bytes = partial_extra_mem::get_extra_mem<T>(params.numel);
     CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
+  } else if (scan_type == PARTIAL_HALFMEM) {
+    extra_bytes = partial_half_mem::get_extra_mem<T>(params.numel);
+    CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
   }
 
   clck::duration time_tot{0};
@@ -88,6 +93,9 @@ TestResult test_partial_scan(
       cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
     } else if (scan_type == PARTIAL) {
       partial_extra_mem::sum_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
+      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+    } else if (scan_type == PARTIAL_HALFMEM) {
+      partial_half_mem::sum_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
       cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
     } else if (scan_type == CPU_NAIVE) {
       result = cpu_naive_scan_search(r, vec, vec_out);
@@ -114,7 +122,10 @@ TestResult test_partial_scan(
 
     if (scan_type != CPU_NAIVE && params.check_correctness) {
       size_t cpu_result = cpu_naive_scan_search_in_place(r, vec.data(), params.numel);
-      if (cpu_result != result) fprintf(stderr, "Different results! Expected %ld, got %ld from r=%g\n", cpu_result, result, r);
+      if (cpu_result != result) {
+        fprintf(stderr, "Different results! Expected %ld, got %ld from r=%g\n", cpu_result, result, r);
+        exit(1);
+      }
     }
 
     time_tot += time_end - time_start;
@@ -139,6 +150,7 @@ TestResult test_partial_scan(
   } else {
     delete [] vec_out;
   }
+  if (extra_bytes > 0) CUDA_CHECK(cudaFree(extra_d));
 
   return TestResult{
     .header = TABLE_LOOKUP[scan_type],

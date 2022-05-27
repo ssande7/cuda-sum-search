@@ -52,8 +52,6 @@ __global__ void inclusive_scan(
     offset *= 2;
   }
 
-  /* if (tid==0) */
-  /* s_data[chunk_size - 1 + CONFLICT_FREE_OFFSET(chunk_size - 1)] = 0; */
   // traverse down tree & build scan
   for (int d = 2; d < chunk_size; d *= 2) {
     offset >>= 1;
@@ -64,10 +62,6 @@ __global__ void inclusive_scan(
       ai += CONFLICT_FREE_OFFSET<sizeof(T)>(ai);
       bi += CONFLICT_FREE_OFFSET<sizeof(T)>(bi);
       s_data[bi] += s_data[ai];
-
-      /* float t = s_data[ai]; */
-      /* s_data[ai] = s_data[bi]; */
-      /* s_data[bi] += t; */
     }
   }
   __syncthreads(); 
@@ -115,8 +109,8 @@ template<typename T>
 __global__ void binary_search_device(
   const double r,     // Random number - 0 <= r < 1
   const T* tree,      // Output of up-sweep
-  const size_t N,        // Number of elements in the input array
-  size_t* found          // output -> index of chosen element
+  const size_t N,     // Number of elements in the input array
+  size_t* found       // output -> index of chosen element
 ) {
   binary_search(r, tree, N, found);
 }

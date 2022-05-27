@@ -23,7 +23,7 @@ enum ScanType {
   PARTIAL_0MEM,
   PARTIAL,
   CUB,
-  NONE        // Placeholder for iteration
+  PARTIAL_HALFMEM,
 };
 
 // WARNING: must be in same order as enum since nvcc doesn't support [SCAN]={...} syntax.
@@ -36,7 +36,8 @@ constexpr TableData TABLE_LOOKUP[] = {
   {.proc = "GPU", .scan = "Work efficient",         .search = "GPU Binary"},
   {.proc = "GPU", .scan = "Partial",                .search = "GPU Binary"},
   {.proc = "GPU", .scan = "Partial, extra memory",  .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "CUB",                    .search = "GPU Binary"}
+  {.proc = "GPU", .scan = "CUB",                    .search = "GPU Binary"},
+  {.proc = "GPU", .scan = "Partial, half output",   .search = "GPU Binary"}
 };
 
 struct Parameters {
@@ -66,7 +67,8 @@ constexpr TestFn TESTS[] = {
   &measure_partial_scan<ScanType::SCAN>,
   &measure_partial_scan<ScanType::PARTIAL_0MEM>,
   &measure_partial_scan<ScanType::PARTIAL>,
-  &measure_partial_scan<ScanType::CUB>
+  &measure_partial_scan<ScanType::CUB>,
+  &measure_partial_scan<ScanType::PARTIAL_HALFMEM>
 };
 
 // Parse command line arguments
