@@ -35,6 +35,7 @@ TestResult test_partial_scan(
   typedef typename DIST::result_type T;
   constexpr bool gpu_data =  scan_type == PARTIAL_0MEM
                           || scan_type == PARTIAL
+                          || scan_type == SCAN_0MEM_CONFLICTS
                           || scan_type == SCAN_0MEM
                           || scan_type == SCAN
                           || scan_type == CPU_BINARY_WITH_COPY
@@ -95,7 +96,10 @@ TestResult test_partial_scan(
 
     time_start = clck::now();
 
-    if (scan_type == SCAN_0MEM) {
+    if (scan_type == SCAN_0MEM_CONFLICTS) {
+      scan_0mem::scan_search<T, true>(r, vec_in, vec_out, params.numel, result_d);
+      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+    } else if (scan_type == SCAN_0MEM) {
       scan_0mem::scan_search(r, vec_in, vec_out, params.numel, result_d);
       cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
     } else if (scan_type == SCAN) {
