@@ -10,9 +10,9 @@ namespace partial_half_mem {
 // Call repeatedly until chunk_size >= N (ie. next step would only load 1 data point
 template<size_t chunk_size, typename T>
 __global__ void scan_up_sweep(
-    const T* g_idata,  // Input data
-    T* g_odata,        // Output data
-    T* g_aggregates,   // Storage for aggregate of each block
+    const T* __restrict__ g_idata,  // Input data
+    T* __restrict__ g_odata,        // Output data
+    T* __restrict__ g_aggregates,   // Storage for aggregate of each block
     const size_t N                  // Number of elements in input data
 ) {
   // Can't declare temp directly as s_data since type changes in teplating
@@ -70,11 +70,11 @@ __global__ void scan_up_sweep(
 template<size_t chunk_size, typename T>
 __global__ void search_tree_device(
   const double r,                     // Random number - 0 <= r < 1
-  const T*const g_idata, // Original input array
-  const T*const tree,    // Output of up-sweep
+  const T*const __restrict__ g_idata, // Original input array
+  const T*const __restrict__ tree,    // Output of up-sweep
   const size_t N,                     // Number of elements in the input array
-  const T* agg_begin,    // pointer to final level of aggregate tree (chunk_size elements)
-  size_t* found          // output -> index of chosen element
+  const T* __restrict__ agg_begin,    // pointer to final level of aggregate tree (chunk_size elements)
+  size_t* __restrict__ found          // output -> index of chosen element
 ) {
   size_t len = *reinterpret_cast<const size_t*>(reinterpret_cast<const uint8_t*>(agg_begin) - 32);
   const T rng = r * *agg_begin;
