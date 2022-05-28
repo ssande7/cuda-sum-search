@@ -19,6 +19,7 @@
 #include "sum_search_halfmem.cuh"
 #include "sum_search_halfmem_coalesced.cuh"
 #include "scan.cuh"
+#include "scan_0mem.cuh"
 #include "cpu_scan.cuh"
 
 using namespace std;
@@ -34,6 +35,7 @@ TestResult test_partial_scan(
   typedef typename DIST::result_type T;
   constexpr bool gpu_data =  scan_type == PARTIAL_0MEM
                           || scan_type == PARTIAL
+                          || scan_type == SCAN_0MEM
                           || scan_type == SCAN
                           || scan_type == CPU_BINARY_WITH_COPY
                           || scan_type == CUB
@@ -63,7 +65,10 @@ TestResult test_partial_scan(
     vec_out = new T[params.numel];
   }
   // Get storage requirement
-  if (scan_type == CUB) {
+  if (scan_type == SCAN) {
+    extra_bytes = scan_extra_mem::get_extra_mem<T>(params.numel);
+    CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
+  } else if (scan_type == CUB) {
     cub::DeviceScan::InclusiveSum(extra_d, extra_bytes, vec_in, vec_out, params.numel);
     CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
   } else if (scan_type == PARTIAL) {
@@ -90,8 +95,11 @@ TestResult test_partial_scan(
 
     time_start = clck::now();
 
-    if (scan_type == SCAN) {
-      scan_search(r, vec_in, vec_out, params.numel, result_d);
+    if (scan_type == SCAN_0MEM) {
+      scan_0mem::scan_search(r, vec_in, vec_out, params.numel, result_d);
+      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+    } else if (scan_type == SCAN) {
+      scan_extra_mem::scan_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
       cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
     } else if (scan_type == PARTIAL_0MEM) {
       partial_0mem::sum_search(r, vec_in, vec_out, params.numel, result_d);
@@ -119,7 +127,7 @@ TestResult test_partial_scan(
       result = cpu_scan_binary_search(r, vec, vec_out);
     } else if (scan_type == CUB) {
       cub::DeviceScan::InclusiveSum(extra_d, extra_bytes, vec_in, vec_out, params.numel);
-      binary_search_device<<<1,1>>>(r, vec_out, params.numel, result_d);
+      scan_0mem::binary_search_device<<<1,1>>>(r, vec_out, params.numel, result_d);
       cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
     } else {
       fprintf(stderr, "ERROR: unknown algorithm type. This should not occur.");

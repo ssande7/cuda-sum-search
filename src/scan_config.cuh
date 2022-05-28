@@ -39,19 +39,35 @@ constexpr size_t SMEM_PER_BLOCK<8>(int data_per_thread) {
 }
 
 
-// Compare function to allow specialisation for floating point numbers
+// Compare function to allow specialisation for floating point numbers/other types
 template<typename T> __device__ __host__
 inline bool search_cmp(T r, T val) {
   return r > val;
 }
-// template<> __device__ __host__ 
-// inline bool search_cmp<float>(float r, float val) {
-//   return r > val && (r - val)/r >= __FLT_EPSILON__;
-// }
-// template<> __device__ __host__ 
-// inline bool search_cmp<double>(double r, double val) {
-//   return r > val && (r - val)/r >= __DBL_EPSILON__;
-// }
+
+template<typename T>
+__host__ __device__ inline void binary_search(
+    const double r,
+    const T* tree,
+    const size_t N,
+    size_t *found
+) {
+  const T rng = r * tree[N-1];
+  size_t offset = 0, max = N-1, i;
+  while (offset < max) {
+    i = offset + (max - offset) / 2;
+    if (search_cmp(rng, tree[i])) {
+      offset = i + 1;
+    } else if (i > 0 && search_cmp(rng, tree[i-1])) {
+      offset = i;
+      break;
+    } else {
+      max = i;
+    }
+  }
+  *found = offset;
+}
+
 
 
 #define CUDA_CHECK(call)                                                      \
