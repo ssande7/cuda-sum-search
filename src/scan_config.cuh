@@ -19,11 +19,11 @@ constexpr size_t CONFLICT_FREE_OFFSET(const size_t n);
 
 template<> __host__ __device__
 constexpr size_t CONFLICT_FREE_OFFSET<4>(const size_t n) {
-   return n >> LOG_NUM_BANKS_4B; //((n) >> NUM_BANKS_4B + (n) >> (2 * LOG_NUM_BANKS_4B));
+   return n >> LOG_NUM_BANKS_4B;
 }
 template<> __host__ __device__
 constexpr size_t CONFLICT_FREE_OFFSET<8>(const size_t n) {
-   return n >> LOG_NUM_BANKS_8B; //((n) >> NUM_BANKS_8B + (n) >> (2 * LOG_NUM_BANKS_8B));
+   return n >> LOG_NUM_BANKS_8B;
 }
 
 template<size_t bytes> __host__ __device__
