@@ -4,14 +4,15 @@
 #include <cstring>
 #include <stdexcept>
 #include <unordered_set>
-#include <float.h>
+#include <cfloat>
+#include <climits>
 
 #include "test_result.h"
 
 constexpr static char HELP_MESSAGE[] = 
 "Microbenchmarking of sum and search algorithms on GPU.\n" \
-"Options are:\n" \
 "\n" \
+"OPTIONS:\n" \
 "-h/--help                    Show this message and exit.\n" \
 "\n" \
 "-s/--seed SEED               Set seed (default 123456789). All benchmarks begin\n" \
