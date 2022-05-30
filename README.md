@@ -17,7 +17,7 @@ algorithm implemented in [CUB](https://github.com/NVIDIA/cub).
 A 2x speedup over the work-efficient algorithm is achieved by the partial sum
 algorithm, with performance on par with the CUB implementation. Further
 optimisation (also applicable to the single pass algorithm), relying on extra
-memory working space, provides an additional 20% faster throughput, with the 
+memory working space, provides an additional 20% faster throughput, with the
 possibility to go even faster while also requiring less extra memory (L1 cache
 size allowing, and at a minor cost in search speed).
 
