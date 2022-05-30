@@ -28,4 +28,4 @@ Some parts of this code are derived from the source code of the work-efficient
 parallel scan algorithm described in GPU Gems 3, and are thereby subject to
 copyright as indicated in the relevant files.
 
-All other code in this released under the [MIT license](LICENSE.txt).
+All other code in this repository is released under the [MIT license](LICENSE.txt).
