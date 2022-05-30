@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Submit script for RCC Wiener.
+# Should be similarly applicable to other slurm-based HPCs.
+#
+# Modify modules_wiener.txt or point to a different file for HPC-specific
+# required modules.
 
 set -o errexit
 set -o pipefail
@@ -13,6 +18,7 @@ fi
 src_dir="$(pwd)"
 
 # Assume cmake build directory is in scratch
+# (symlink in home directory)
 cd ~/scratch/cuda-sum-search/
 
 t="$1"

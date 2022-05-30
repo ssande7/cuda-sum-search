@@ -2,13 +2,11 @@
 #include <cuda_runtime.h>
 #include <cub/cub.cuh>
 
-#include <string>
 #include <vector>
 #include <random>
 #include <chrono>
 #include <stdexcept>
 #include <functional>
-#include <float.h>
 
 #include "cli_config.h"
 #include "test_result.h"
@@ -33,17 +31,18 @@ TestResult test_partial_scan(
     mt19937 &engine
 ) {
   typedef typename DIST::result_type T;
-  constexpr bool gpu_data =  scan_type == PARTIAL_0MEM
-                          || scan_type == PARTIAL
-                          || scan_type == SCAN_0MEM_CONFLICTS
-                          || scan_type == SCAN_0MEM
-                          || scan_type == SCAN
-                          || scan_type == CPU_BINARY_WITH_COPY
-                          || scan_type == CUB
-                          || scan_type == PARTIAL_HALFMEM
-                          || scan_type == PARTIAL_HALFMEM_COALESCED;
-  constexpr bool in_place =  scan_type == CPU_BINARY_IN_PLACE
-                          || scan_type == CPU_NAIVE_IN_PLACE;
+  constexpr bool gpu_data =  scan_type == ScanType::PARTIAL_0MEM
+                          || scan_type == ScanType::PARTIAL
+                          || scan_type == ScanType::SCAN_0MEM_CONFLICTS
+                          || scan_type == ScanType::SCAN_0MEM
+                          || scan_type == ScanType::SCAN
+                          || scan_type == ScanType::CPU_BINARY_WITH_COPY
+                          || scan_type == ScanType::CUB
+                          || scan_type == ScanType::PARTIAL_HALFMEM
+                          || scan_type == ScanType::PARTIAL_HALFMEM_COALESCED;
+
+  constexpr bool in_place =  scan_type == ScanType::CPU_BINARY_IN_PLACE
+                          || scan_type == ScanType::CPU_NAIVE_IN_PLACE;
 
   uniform_real_distribution<double> rng_select{}; // gives 0.0 <= r < 1.0
 
@@ -61,24 +60,24 @@ TestResult test_partial_scan(
   } else {
     vec_out = new T[params.numel];
   }
-  if (scan_type == CPU_BINARY_WITH_COPY) {
+  if (scan_type == ScanType::CPU_BINARY_WITH_COPY) {
     CUDA_CHECK(cudaFree(vec_out));
     vec_out = new T[params.numel];
   }
   // Get storage requirement
-  if (scan_type == SCAN) {
+  if (scan_type == ScanType::SCAN) {
     extra_bytes = scan_extra_mem::get_extra_mem<T>(params.numel);
     CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
-  } else if (scan_type == CUB) {
+  } else if (scan_type == ScanType::CUB) {
     cub::DeviceScan::InclusiveSum(extra_d, extra_bytes, vec_in, vec_out, params.numel);
     CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
-  } else if (scan_type == PARTIAL) {
+  } else if (scan_type == ScanType::PARTIAL) {
     extra_bytes = partial_extra_mem::get_extra_mem<T>(params.numel);
     CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
-  } else if (scan_type == PARTIAL_HALFMEM) {
+  } else if (scan_type == ScanType::PARTIAL_HALFMEM) {
     extra_bytes = partial_half_mem::get_extra_mem<T>(params.numel);
     CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
-  } else if (scan_type == PARTIAL_HALFMEM_COALESCED) {
+  } else if (scan_type == ScanType::PARTIAL_HALFMEM_COALESCED) {
     extra_bytes = partial_half_mem_coalesced::get_extra_mem<T>(params.numel);
     CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
   }
@@ -96,51 +95,80 @@ TestResult test_partial_scan(
 
     time_start = clck::now();
 
-    if (scan_type == SCAN_0MEM_CONFLICTS) {
-      scan_0mem::scan_search<T, true>(r, vec_in, vec_out, params.numel, result_d);
-      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
-    } else if (scan_type == SCAN_0MEM) {
-      scan_0mem::scan_search(r, vec_in, vec_out, params.numel, result_d);
-      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
-    } else if (scan_type == SCAN) {
-      scan_extra_mem::scan_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
-      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
-    } else if (scan_type == PARTIAL_0MEM) {
-      partial_0mem::sum_search(r, vec_in, vec_out, params.numel, result_d);
-      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
-    } else if (scan_type == PARTIAL) {
-      partial_extra_mem::sum_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
-      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
-    } else if (scan_type == PARTIAL_HALFMEM) {
-      partial_half_mem::sum_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
-      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
-    } else if (scan_type == PARTIAL_HALFMEM_COALESCED) {
-      partial_half_mem_coalesced::sum_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
-      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
-    } else if (scan_type == CPU_NAIVE) {
-      result = cpu_naive_scan_search(r, vec, vec_out);
-    } else if (scan_type == CPU_NAIVE_IN_PLACE) {
-      result = cpu_naive_scan_search_in_place(r, vec_out, params.numel);
-    } else if (scan_type == CPU_BINARY) {
-      result = cpu_scan_binary_search(r, vec, vec_out);
-    } else if (scan_type == CPU_BINARY_IN_PLACE) {
-      result = cpu_scan_binary_search_in_place(r, vec_out, params.numel);
-    } else if (scan_type == CPU_BINARY_WITH_COPY) {
-      // Include copy time in benchmark
-      cudaMemcpy(vec.data(), vec_in, sizeof(T)*params.numel, cudaMemcpyDeviceToHost);
-      result = cpu_scan_binary_search(r, vec, vec_out);
-    } else if (scan_type == CUB) {
-      cub::DeviceScan::InclusiveSum(extra_d, extra_bytes, vec_in, vec_out, params.numel);
-      scan_0mem::binary_search_device<<<1,1>>>(r, vec_out, params.numel, result_d);
-      cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
-    } else {
-      fprintf(stderr, "ERROR: unknown algorithm type. This should not occur.");
-      exit(-1);
+    switch (scan_type) {
+      case ScanType::SCAN_0MEM_CONFLICTS: {
+        scan_0mem::scan_search<T, true>(r, vec_in, vec_out, params.numel, result_d);
+        cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+        break;
+      }
+      case ScanType::SCAN_0MEM: {
+        scan_0mem::scan_search(r, vec_in, vec_out, params.numel, result_d);
+        cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+        break;
+      }
+      case ScanType::SCAN: {
+        scan_extra_mem::scan_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
+        cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+        break;
+      }
+      case ScanType::PARTIAL_0MEM: {
+        partial_0mem::sum_search(r, vec_in, vec_out, params.numel, result_d);
+        cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+        break;
+      }
+      case ScanType::PARTIAL: {
+        partial_extra_mem::sum_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
+        cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+        break;
+      }
+      case ScanType::PARTIAL_HALFMEM: {
+        partial_half_mem::sum_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
+        cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+        break;
+      }
+      case ScanType::PARTIAL_HALFMEM_COALESCED: {
+        partial_half_mem_coalesced::sum_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
+        cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+        break;
+      }
+      case ScanType::CPU_NAIVE: {
+        result = cpu_naive_scan_search(r, vec, vec_out);
+        break;
+      }
+      case ScanType::CPU_NAIVE_IN_PLACE: {
+        result = cpu_naive_scan_search_in_place(r, vec_out, params.numel);
+        break;
+      }
+      case ScanType::CPU_BINARY: {
+        result = cpu_scan_binary_search(r, vec, vec_out);
+        break;
+      }
+      case ScanType::CPU_BINARY_IN_PLACE: {
+        result = cpu_scan_binary_search_in_place(r, vec_out, params.numel);
+        break;
+      }
+      case ScanType::CPU_BINARY_WITH_COPY: {
+        // Include copy time in benchmark
+        cudaMemcpy(vec.data(), vec_in, sizeof(T)*params.numel, cudaMemcpyDeviceToHost);
+        result = cpu_scan_binary_search(r, vec, vec_out);
+        break;
+      }
+      case ScanType::CUB: {
+        cub::DeviceScan::InclusiveSum(extra_d, extra_bytes, vec_in, vec_out, params.numel);
+        scan_0mem::binary_search_device<<<1,1>>>(r, vec_out, params.numel, result_d);
+        cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+        break;
+       }
+      default: {
+        fprintf(stderr, "ERROR: unknown algorithm type. This should not occur.");
+        exit(-1);
+      }
     }
 
     auto time_end = clck::now();
 
-    if (scan_type != CPU_NAIVE && params.check_correctness) {
+    // Check correctness
+    if (scan_type != ScanType::CPU_NAIVE && params.check_correctness) {
       size_t cpu_result = cpu_naive_scan_search_in_place(r, vec.data(), params.numel);
       if (cpu_result != result) {
         fprintf(stderr, "Different results! Expected %ld, got %ld from r=%g\n", cpu_result, result, r);
@@ -148,6 +176,7 @@ TestResult test_partial_scan(
       }
     }
 
+    // Store & check statistics
     time_tot += time_end - time_start;
     durations.emplace_back(static_cast<double>((time_end - time_start).count()));
     if (i+1 >= params.num_tests_min) {
@@ -160,9 +189,10 @@ TestResult test_partial_scan(
     }
   }
 
+  // Clean up
   if (gpu_data) {
     CUDA_CHECK(cudaFree(vec_in));
-    if (scan_type == CPU_BINARY_WITH_COPY)
+    if (scan_type == ScanType::CPU_BINARY_WITH_COPY)
       delete[] vec_out;
     else
       CUDA_CHECK(cudaFree(vec_out));
@@ -201,23 +231,19 @@ TestResult measure_partial_scan(const Parameters &params) {
   engine.seed(params.seed);
 
   switch (params.vtype) {
-    case ArrayType::I32:
-      {
+    case ArrayType::I32: {
         uniform_int_distribution<int> dist{0, static_cast<int>(params.max)};
         return test_partial_scan<scan_type>(params, dist, engine);
       }
-    case ArrayType::I64:
-      {
+    case ArrayType::I64: {
         uniform_int_distribution<long> dist{0, static_cast<long>(params.max)};
         return test_partial_scan<scan_type>(params, dist, engine);
       }
-    case ArrayType::F32:
-      {
+    case ArrayType::F32: {
         uniform_real_distribution<float> dist{0, static_cast<float>(params.max)};
         return test_partial_scan<scan_type>(params, dist, engine);
       }
-    case ArrayType::F64:
-      {
+    case ArrayType::F64: {
         uniform_real_distribution<double> dist{0, static_cast<double>(params.max)};
         return test_partial_scan<scan_type>(params, dist, engine);
       }
@@ -238,14 +264,12 @@ int main(int argc, char** argv) {
 
   // Run tests
   if (params.csv_format) {
-    printf("Processor\tScan Type\t\t\tSearch Type\tAvg. Time (ns)\tStd. Dev.\tError (%%)\t# Tests\n");
-    for (auto t : TESTS) t(params).print_csv();
+    printf("%s", TestResult::csv_header);
+    for (const auto &t : TESTS) t(params).print_csv();
   } else {
-    printf("+-----------+-------------------------------+---------------+--------------+\n"
-           "| Processor | Scan Type                     | Search Type   | Average Time |\n"
-           "+-----------+-------------------------------+---------------+--------------+\n");
-    for (const auto t : TESTS) t(params).print();
-    printf("+-----------+-------------------------------+---------------+--------------+\n");
+    printf("%s", TestResult::table_header);
+    for (const auto &t : TESTS) t(params).print();
+    printf("%s", TestResult::table_footer);
   }
 
   return 0;

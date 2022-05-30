@@ -29,7 +29,8 @@ def main():
     ax = plt.axes()
     if not args.linear:
         ax.set_xscale('log')
-        # ax.set_yscale('log')
+        if not args.throughput:
+            ax.set_yscale('log')
     colours = plt.cm.Paired(np.linspace(0,1,12))
     colours = colours[[0, 0, 1, 1, 8, 5, 5, 5, 3, 3, 2, 9, 9],:]
     formats = ['.--', '.-', '.--', '.-', '.-', '.:', '.--', '.-', '.--', '.-', '.-', '.--', '.-']
@@ -78,8 +79,6 @@ def main():
         plt.savefig(args.output)
     else:
         plt.show()
-
-
 
 if __name__ == '__main__':
     main()

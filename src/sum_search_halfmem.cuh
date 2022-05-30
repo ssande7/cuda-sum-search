@@ -1,3 +1,42 @@
+/*******************************************************************************
+NOTE:
+The code in the scan_up_sweep function is derived from sections of the
+work-efficient parallel prefix sum source code described in GPU Gems 3
+(https://developer.nvidia.com/gpugems/gpugems3/part-vi-gpu-computing/chapter-39-parallel-prefix-sum-scan-cuda),
+and may thereby be subject to the below copyright statement.
+*******************************************************************************/
+
+/*******************************************************************************
+Copyright (c) 2007, NVIDIA CORPORATION. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+ * Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+ * Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+ * Neither the name of NVIDIA CORPORATION nor the names of its
+   contributors may be used to endorse or promote products derived
+   from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+For additional information on the license terms, see the CUDA EULA at
+https://docs.nvidia.com/cuda/eula/index.html
+*******************************************************************************/
+
 #ifndef SUM_SEARCH_HALFMEM_H
 #define SUM_SEARCH_HALFMEM_H
 
@@ -6,8 +45,8 @@
 namespace partial_half_mem {
 
 // Assumes chunk_size is 2*blockDim.x
-// Call with NBLOCKS(N, chunk_size)
-// Call repeatedly until chunk_size >= N (ie. next step would only load 1 data point
+// Call with NBLOCKS(N, 2*chunk_size)
+// Call repeatedly until chunk_size >= N (ie. next step would only load 1 data point)
 template<size_t chunk_size, typename T>
 __global__ void scan_up_sweep(
     const T* __restrict__ g_idata,  // Input data
@@ -80,6 +119,9 @@ __global__ void search_tree_device(
   const T rng = r * *agg_begin;
   size_t offset = 0;
   T val_offset = 0;
+
+  // NOTE: this could potentially be sped up by pre-fetching once the range of
+  //       possible values is within 1 cache line
   while (len < N) {
     agg_begin = reinterpret_cast<const T*>(reinterpret_cast<const uint8_t*>(agg_begin) - 32 - ((len+1)/2*sizeof(T)+31)/32*32);
 #pragma unroll

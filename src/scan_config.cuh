@@ -8,45 +8,44 @@
 #define LOG_NUM_BANKS_4B 5
 #define NUM_BANKS_8B 16
 #define LOG_NUM_BANKS_8B 4
-/*
-#define CONFLICT_FREE_OFFSET(n) \
-  ((n) >> NUM_BANKS + (n) >> (2 * LOG_NUM_BANKS))
-#define SMEM_PER_BLOCK (BLOCK_SIZE + BLOCK_SIZE/NUM_BANKS + BLOCK_SIZE/(NUM_BANKS*NUM_BANKS))
-*/
 
-template<size_t bytes> __host__ __device__
+template<size_t bytes> __host__ __device__ __forceinline__
 constexpr size_t CONFLICT_FREE_OFFSET(const size_t n);
 
-template<> __host__ __device__
+template<> __host__ __device__ __forceinline__
 constexpr size_t CONFLICT_FREE_OFFSET<4>(const size_t n) {
    return n >> LOG_NUM_BANKS_4B;
 }
-template<> __host__ __device__
+template<> __host__ __device__ __forceinline__
 constexpr size_t CONFLICT_FREE_OFFSET<8>(const size_t n) {
    return n >> LOG_NUM_BANKS_8B;
 }
 
-template<size_t bytes> __host__ __device__
+template<size_t bytes> __host__ __device__ __forceinline__
 constexpr size_t SMEM_PER_BLOCK(int data_per_thread=2);
 
-template<> __host__ __device__
+template<> __host__ __device__ __forceinline__
 constexpr size_t SMEM_PER_BLOCK<4>(int data_per_thread) {
-   return data_per_thread*(BLOCK_SIZE + BLOCK_SIZE/NUM_BANKS_4B + BLOCK_SIZE/(NUM_BANKS_4B*NUM_BANKS_4B));
+   return data_per_thread*(BLOCK_SIZE + BLOCK_SIZE/NUM_BANKS_4B +
+       BLOCK_SIZE/(NUM_BANKS_4B*NUM_BANKS_4B));
 }
-template<> __host__ __device__
+template<> __host__ __device__ __forceinline__
 constexpr size_t SMEM_PER_BLOCK<8>(int data_per_thread) {
-   return data_per_thread*(BLOCK_SIZE + BLOCK_SIZE/NUM_BANKS_8B + BLOCK_SIZE/(NUM_BANKS_8B*NUM_BANKS_8B));
+   return data_per_thread*(BLOCK_SIZE + BLOCK_SIZE/NUM_BANKS_8B +
+       BLOCK_SIZE/(NUM_BANKS_8B*NUM_BANKS_8B));
 }
 
 
-// Compare function to allow specialisation for floating point numbers/other types
-template<typename T> __device__ __host__
-inline bool search_cmp(T r, T val) {
+// Compare function to allow specialisation for floating point
+// numbers/other types if necessary
+template<typename T> __device__ __host__ __forceinline__
+bool search_cmp(T r, T val) {
   return r > val;
 }
 
 template<typename T>
-__host__ __device__ inline void binary_search(
+__host__ __device__ __forceinline__
+void binary_search(
     const double r,
     const T* tree,
     const size_t N,

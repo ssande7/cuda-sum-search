@@ -8,6 +8,15 @@ struct TableData {
 };
 
 struct TestResult {
+  static constexpr char table_header[] = 
+    "+-----------+-------------------------------+---------------+--------------+\n" \
+    "| Processor | Scan Type                     | Search Type   | Average Time |\n" \
+    "+-----------+-------------------------------+---------------+--------------+\n";
+  static constexpr char table_footer[] =
+    "+-----------+-------------------------------+---------------+--------------+\n";
+  static constexpr char csv_header[] = 
+    "Processor\tScan Type\t\t\tSearch Type\tAvg. Time (ns)\tStd. Dev.\tError (%%)\t# Tests\n";
+
   TableData header;
   double avg_duration;
   double stdev;

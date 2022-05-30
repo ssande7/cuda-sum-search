@@ -1,12 +1,49 @@
 #ifndef CLI_CONFIG_H
 #define CLI_CONFIG_H
 
+#include <cstring>
 #include <stdexcept>
 #include <unordered_set>
+#include <float.h>
 
 #include "test_result.h"
 
-enum ArrayType {
+constexpr static char HELP_MESSAGE[] = 
+"Microbenchmarking of sum and search algorithms on GPU.\n" \
+"Options are:\n" \
+"\n" \
+"-h/--help                    Show this message and exit.\n" \
+"\n" \
+"-s/--seed SEED               Set seed (default 123456789). All benchmarks begin\n" \
+"                             from the same seed, so the same data is processed\n" \
+"                             by each algorithm.\n" \
+"\n" \
+"-d/--device ID               Index of GPU to use. Default 0.\n" \
+"\n" \
+"-n/--num-tests-max MAX       Maximum number of tests to run. Default 100.\n" \
+"\n" \
+"-nmin/--num-tests-min MIN    Minimum number of tests to run. Default 10.\n" \
+"\n" \
+"-e/--error-tol TOL           Target standard error of the mean as a fraction\n" \
+"                             of 1. Default 0.01 (1%).\n" \
+"\n" \
+"-N/--num-elements NUM        Number of (randomly generated) elements in the\n" \
+"                             test data. Default 10000.\n" \
+"\n" \
+"-t/--type TYPE               One of i32, i64, f32, or f64 for 32- or 64-bit\n" \
+"                             integers or floats, respectively. Default i32.\n" \
+"\n" \
+"-c/--check                   Check for correctness against the simple linear\n" \
+"                             CPU implementation. Any discrepencies are printed\n" \
+"                             *before* the benchmark result.\n" \
+"\n" \
+"-csv                         Display detailed results in plain format that\n" \
+"                             can be read as a .csv file.\n"
+"\n" \
+"-x/--exclude ID [ID [...]]   Exclude tests with the listed 0-based indices.\n" \
+"                             Default no tests excluded.\n";
+
+enum class ArrayType {
   I32,
   I64,
   F32,
@@ -29,8 +66,9 @@ enum ScanType {
   PARTIAL_HALFMEM_COALESCED,
 };
 
-// WARNING: must be in same order as enum since nvcc doesn't support [SCAN]={...} syntax.
-constexpr TableData TABLE_LOOKUP[] = {
+// WARNING: must be in same order as ScanType enum since nvcc
+//          doesn't properly support [SCAN]={...} syntax.
+constexpr static TableData TABLE_LOOKUP[] = {
   {.proc = "CPU", .scan = "Linear",                         .search = "Linear"},
   {.proc = "CPU", .scan = "Linear, in-place",               .search = "Linear"},
   {.proc = "CPU", .scan = "Linear",                         .search = "Binary"},
@@ -46,6 +84,7 @@ constexpr TableData TABLE_LOOKUP[] = {
   {.proc = "GPU", .scan = "Partial, half out, coalesced",   .search = "GPU Binary"},
 };
 
+// Benchmarking parameters
 struct Parameters {
   long seed = 123456789;
   size_t num_tests_max = 100;
@@ -54,7 +93,7 @@ struct Parameters {
   size_t numel = 10000;
   long double max = INT_MAX;
   int device = 0;
-  ArrayType vtype = I32;
+  ArrayType vtype = ArrayType::I32;
   bool check_correctness = false;
   bool csv_format = false;
   std::unordered_set<ScanType> exclude{};
@@ -64,7 +103,7 @@ template<ScanType scan_type>
 TestResult measure_partial_scan(const Parameters &params);
 
 using TestFn = TestResult (*)(const Parameters&);
-constexpr TestFn TESTS[] = {
+constexpr static TestFn TESTS[] = {
   &measure_partial_scan<ScanType::CPU_NAIVE>,
   &measure_partial_scan<ScanType::CPU_NAIVE_IN_PLACE>,
   &measure_partial_scan<ScanType::CPU_BINARY>,
@@ -133,6 +172,9 @@ Parameters parse_args(int argc, char** argv) {
         if (argv[iarg][0] == '-') break;
         params.exclude.insert(static_cast<ScanType>(strtol(argv[iarg++], nullptr, 10)));
       }
+    } else if (strcmp(argv[iarg], "-h")==0 || strcmp(argv[iarg], "--help")==0) {
+      printf("%s\n", HELP_MESSAGE);
+      exit(0);
     } else throw runtime_error("Unknown argument '" + string(argv[iarg]) + "'");
   }
   if (params.vtype == ArrayType::I32 && params.numel > INT_MAX) throw runtime_error("Number of elements too large to fit in int");

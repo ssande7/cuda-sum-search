@@ -20,3 +20,12 @@ optimisation (also applicable to the single pass algorithm), relying on extra
 memory working space, provides an additional 20% faster throughput, with the 
 possibility to go even faster while also requiring less extra memory (L1 cache
 size allowing, and at a minor cost in search speed).
+
+LICENSE
+-------
+
+Some parts of this code are derived from the source code of the work-efficient
+parallel scan algorithm described in GPU Gems 3, and are thereby subject to
+copyright as indicated in the relevant files.
+
+All other code in this released under the [MIT license](LICENSE.txt).
