@@ -19,6 +19,8 @@
 #include "scan.cuh"
 #include "scan_0mem.cuh"
 #include "cpu_scan.cuh"
+#include "sum_search_oacc_simple.h"
+#include "sum_search_oacc.h"
 
 using namespace std;
 typedef chrono::high_resolution_clock clck;
@@ -39,7 +41,9 @@ TestResult test_partial_scan(
                           || scan_type == ScanType::CPU_BINARY_WITH_COPY
                           || scan_type == ScanType::CUB
                           || scan_type == ScanType::PARTIAL_HALFMEM
-                          || scan_type == ScanType::PARTIAL_HALFMEM_COALESCED;
+                          || scan_type == ScanType::PARTIAL_HALFMEM_COALESCED
+                          || scan_type == ScanType::OPENACC_PARTIAL_SIMPLE
+                          || scan_type == ScanType::OPENACC_PARTIAL;
 
   constexpr bool in_place =  scan_type == ScanType::CPU_BINARY_IN_PLACE
                           || scan_type == ScanType::CPU_NAIVE_IN_PLACE;
@@ -80,6 +84,13 @@ TestResult test_partial_scan(
   } else if (scan_type == ScanType::PARTIAL_HALFMEM_COALESCED) {
     extra_bytes = partial_half_mem_coalesced::get_extra_mem<T>(params.numel);
     CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
+  } else if (scan_type == ScanType::OPENACC_PARTIAL_SIMPLE) {
+    extra_bytes = partial_openacc_simple::get_extra_mem<T>(params.numel);
+    CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
+  } else if (scan_type == ScanType::OPENACC_PARTIAL) {
+    printf("TODO: allocate extra memory\n");
+    // extra_bytes = partial_openacc_simple::get_extra_mem<T>(params.numel);
+    // CUDA_CHECK(cudaMalloc(&extra_d, extra_bytes));
   }
 
   clck::duration time_tot{0};
@@ -158,7 +169,12 @@ TestResult test_partial_scan(
         scan_0mem::binary_search_device<<<1,1>>>(r, vec_out, params.numel, result_d);
         cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
         break;
-       }
+      }
+      case ScanType::OPENACC_PARTIAL_SIMPLE: {
+        partial_openacc_simple::sum_search(r, vec_in, vec_out, extra_d, params.numel, result_d);
+        cudaMemcpy(&result, result_d, sizeof(T), cudaMemcpyDeviceToHost);
+        break;
+      }
       default: {
         fprintf(stderr, "ERROR: unknown algorithm type. This should not occur.");
         exit(-1);

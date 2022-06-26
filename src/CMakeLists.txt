@@ -10,12 +10,13 @@ set(INC
   )
 
 set(CMAKE_CUDA_RUNTIME_LIBRARY Static CACHE STRING "CUDA runtime library")
-set(CMAKE_CUDA_STANDARD 20 CACHE STRING "CUDA C++ standard")
+set(CMAKE_CUDA_STANDARD 17 CACHE STRING "CUDA C++ standard")
 set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
 
 add_executable(test ${SRCS})
 
 target_compile_options(test PRIVATE
+  -acc
   -Wall
   -Wextra
   )

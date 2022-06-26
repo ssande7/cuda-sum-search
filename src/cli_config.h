@@ -65,24 +65,28 @@ enum ScanType {
   CUB,
   PARTIAL_HALFMEM,
   PARTIAL_HALFMEM_COALESCED,
+  OPENACC_PARTIAL_SIMPLE,
+  OPENACC_PARTIAL,
 };
 
 // WARNING: must be in same order as ScanType enum since nvcc
 //          doesn't properly support [SCAN]={...} syntax.
 constexpr static TableData TABLE_LOOKUP[] = {
-  {.proc = "CPU", .scan = "Linear",                         .search = "Linear"},
-  {.proc = "CPU", .scan = "Linear, in-place",               .search = "Linear"},
-  {.proc = "CPU", .scan = "Linear",                         .search = "Binary"},
-  {.proc = "CPU", .scan = "Linear, in-place",               .search = "Binary"},
-  {.proc = "CPU", .scan = "Linear, data from GPU",          .search = "Binary"},
-  {.proc = "GPU", .scan = "Work efficient with conflicts",  .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "Work efficient",                 .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "Work efficient, extra memory",   .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "Partial",                        .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "Partial, extra memory",          .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "CUB",                            .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "Partial, half output",           .search = "GPU Binary"},
-  {.proc = "GPU", .scan = "Partial, half out, coalesced",   .search = "GPU Binary"},
+  {.proc = "CPU",     .scan = "Linear",                         .search = "Linear"},
+  {.proc = "CPU",     .scan = "Linear, in-place",               .search = "Linear"},
+  {.proc = "CPU",     .scan = "Linear",                         .search = "Binary"},
+  {.proc = "CPU",     .scan = "Linear, in-place",               .search = "Binary"},
+  {.proc = "CPU",     .scan = "Linear, data from GPU",          .search = "Binary"},
+  {.proc = "GPU",     .scan = "Work efficient with conflicts",  .search = "Binary"},
+  {.proc = "GPU",     .scan = "Work efficient",                 .search = "Binary"},
+  {.proc = "GPU",     .scan = "Work efficient, extra memory",   .search = "Binary"},
+  {.proc = "GPU",     .scan = "Partial",                        .search = "Binary"},
+  {.proc = "GPU",     .scan = "Partial, extra memory",          .search = "Binary"},
+  {.proc = "GPU",     .scan = "CUB",                            .search = "Binary"},
+  {.proc = "GPU",     .scan = "Partial, half output",           .search = "Binary"},
+  {.proc = "GPU",     .scan = "Partial, half out, coalesced",   .search = "Binary"},
+  {.proc = "OpenACC", .scan = "Partial, extra memory, naive",   .search = "Binary"},
+  {.proc = "OpenACC", .scan = "Partial, extra memory",          .search = "Binary"},
 };
 
 // Benchmarking parameters
@@ -118,6 +122,8 @@ constexpr static TestFn TESTS[] = {
   &measure_partial_scan<ScanType::CUB>,
   &measure_partial_scan<ScanType::PARTIAL_HALFMEM>,
   &measure_partial_scan<ScanType::PARTIAL_HALFMEM_COALESCED>,
+  &measure_partial_scan<ScanType::OPENACC_PARTIAL_SIMPLE>,
+  &measure_partial_scan<ScanType::OPENACC_PARTIAL>,
 };
 
 // Parse command line arguments
