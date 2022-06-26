@@ -176,7 +176,7 @@ TestResult test_partial_scan(
         break;
       }
       default: {
-        fprintf(stderr, "ERROR: unknown algorithm type. This should not occur.");
+        fprintf(stderr, "ERROR: unknown algorithm type. This should not occur.\n");
         exit(-1);
       }
     }
