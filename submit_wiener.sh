@@ -10,8 +10,8 @@ set -o pipefail
 set -o verbose
 set -o nounset
 
-if [[ $# -ne 1 ]]; then
-    echo "Requires 1 argument for data type"
+if [[ $# -ne 2 ]]; then
+    echo "Requires 2 arguments for block size and data type"
     exit 1
 fi
 # Assume run from root of git repository
@@ -21,7 +21,8 @@ src_dir="$(pwd)"
 # (symlink in home directory)
 cd ~/scratch/cuda-sum-search/
 
-t="$1"
+SZ="$1"
+t="$2"
 name=bench_${t}
 datetime=$(date +"%F-%H-%M-%S")
 logdir=$(pwd)/log
