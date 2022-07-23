@@ -23,7 +23,7 @@ cd ~/scratch/cuda-sum-search/
 
 SZ="$1"
 t="$2"
-name=bench_${t}
+name=bench_${SZ}_${t}
 datetime=$(date +"%F-%H-%M-%S")
 logdir=$(pwd)/log
 
