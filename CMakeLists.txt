@@ -17,33 +17,36 @@ else()
   message("WARNING: Unknown build type!")
 endif()
 
+set(BLOCK_SIZES 32;64;128;256;512)
+
 add_subdirectory(src)
 
-add_custom_target(
-  run_tests_i32
-  DEPENDS test ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh
-  VERBATIM
-  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh i32
-  )
+foreach(BLOCK_SIZE IN LISTS BLOCK_SIZES)
+  add_custom_target(
+    run_tests_${BLOCK_SIZE}_i32
+    DEPENDS test_${BLOCK_SIZE} ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh
+    VERBATIM
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh ${BLOCK_SIZE} i32
+    )
 
-add_custom_target(
-  run_tests_i64
-  DEPENDS test ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh
-  VERBATIM
-  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh i64
-  )
+  add_custom_target(
+    run_tests_${BLOCK_SIZE}_i64
+    DEPENDS test_${BLOCK_SIZE} ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh
+    VERBATIM
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh ${BLOCK_SIZE} i64
+    )
 
-add_custom_target(
-  run_tests_f32
-  DEPENDS test ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh
-  VERBATIM
-  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh f32
-  )
+  add_custom_target(
+    run_tests_${BLOCK_SIZE}_f32
+    DEPENDS test_${BLOCK_SIZE} ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh
+    VERBATIM
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh ${BLOCK_SIZE} f32
+    )
 
-add_custom_target(
-  run_tests_f64
-  DEPENDS test ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh
-  VERBATIM
-  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh f64
-  )
-
+  add_custom_target(
+    run_tests_${BLOCK_SIZE}_f64
+    DEPENDS test_${BLOCK_SIZE} ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh
+    VERBATIM
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_tests.sh ${BLOCK_SIZE} f64
+    )
+endforeach()

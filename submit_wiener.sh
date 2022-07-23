@@ -44,5 +44,5 @@ set -o verbose
 
 module load \$(cat ${src_dir}/modules_wiener.txt)
 
-cmake --build . --target run_tests_${t}
+cmake --build . --target run_tests_${SZ}_${t}
 EOF

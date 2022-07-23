@@ -1,7 +1,9 @@
 #ifndef SCAN_CONFIG_H
 #define SCAN_CONFIG_H
 
+#ifndef BLOCK_SIZE
 #define BLOCK_SIZE 512
+#endif
 #define NBLOCKS(n, THREADS) (((n)+(THREADS)-1)/(THREADS))
 
 #define NUM_BANKS_4B 32

@@ -9,6 +9,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('dir', type=str, help='Root directory of data')
     parser.add_argument('-t', '--type', type=str, default='i32', help='Data type')
+    parser.add_argument('-b', '--block-size', type=int, default=128, help='Block size')
     parser.add_argument('-x', '--exclude', type=int, nargs='+', default=[], help='Rows to exclude')
     parser.add_argument('-l', '--linear', action='store_true', help='Linear scale axes')
     parser.add_argument('-y', '--ymax', type=float, default=None, help='Maximum for y axis')
@@ -19,7 +20,7 @@ def main():
     parser.add_argument('--show-search', action='store_true', help='Show search type in legend')
     args = parser.parse_args()
 
-    files = glob(f'{args.dir}/{args.type}/*.csv')
+    files = glob(f'{args.dir}/{args.block_size}/{args.type}/*.csv')
     files.sort()
 
     N = np.array([int(f.split('/')[-1].rstrip('.csv')) for f in files])
@@ -61,13 +62,9 @@ def main():
         plt.ylim(top=args.ymax, bottom=0)
     if args.xmin:
         plt.xlim(left=args.xmin)
-    # xmark = 1024
-    # _, xmax = plt.xlim()
-    # ymin,ymax=plt.ylim()
-    # while xmark < xmax:
-    #     ax.plot([xmark, xmark], [ymin, ymax], 'k--', label='_')
-    #     xmark *= 1024
-    ax.legend()
+
+    ax.legend(title=f'Block Size: {args.block_size}',
+              title_fontproperties={'weight': 'bold'})
     ax.set_xlabel('N')
     if args.throughput:
         ax.set_ylabel('Throughput (items per ns)')
